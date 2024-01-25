@@ -1,4 +1,28 @@
 /*
+ * Copyright © 2023 . All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Author: 
+ *	Евгений Волошин
+ *	Рыжков Александр
+ *	Холодов Александр
+ *	Ипполитов Илья
+ *	Долгатов Амир
+ */
+
+
+/*
 * Copyright © 2020 Jørgen Lind
 
 * Permission to use, copy, modify, distribute, and sell this software and its
@@ -22,12 +46,12 @@
 
 /*! \file */
 
-/*! \mainpage json_struct
+/*! \mainpage Include_json_struct
  *
- * json_struct is a set of classes meant for simple and efficient parse,
+ * Include_json_struct is a set of classes meant for simple and efficient parse,
  * tokenize and validate json.
  *
- * json_struct support parsing json into a stream of tokens using the \ref
+ * Include_json_struct support parsing json into a stream of tokens using the \ref
  * tokenizer "JS::Tokenizer" api, or parsing json into c++ structures using the
  * \ref js_struct "JS_OBJECT" api.
  */
@@ -54,7 +78,7 @@
  * Tokenizing json in this way allows you parse arbitrary large json data.
  * Also the tokenizer has mechanisms for asking for more data, making it easy
  * to stream json data. Using this interface to parse json is a bit verbose and
- * requires the application code to keep some extra state. json_struct also has
+ * requires the application code to keep some extra state. Include_json_struct also has
  * functionality for parsing json data directly into c++ structures. This is
  * done by adding some metadata to the structure, or by adding a template
  * specialisation of a class.  \ref js_struct "describes this" in more detail.
@@ -72,7 +96,7 @@
 
 /*! \page js_struct Parsing json into C++ structs
  *
- * json_struct makes it very easy to put your json data into c++ structures or
+ * Include_json_struct makes it very easy to put your json data into c++ structures or
  * take data from c++ structures and generate json.
  *
  * This is best shown with an example: \include simple_struct.cpp
@@ -95,7 +119,7 @@
  * The JS_OBJECT call inside the JsonData struct will create a nested struct
  * declaration inside the JsonData struct. This nested struct will expose some
  * meta data about the struct, exposing the names of the members at runtime.
- * json_struct can then use this runtime information to populate the struct.
+ * Include_json_struct can then use this runtime information to populate the struct.
  *
  * Populating the struct is done by first creating a JS::ParseContext. The
  * JS::ParseContext contains a JS::Tokenizer. This tokenizer is what the actual
@@ -118,12 +142,12 @@
 #include <cmath>
 #include <cstring>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string>
 #include <vector>
+#include <limits>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -152,11 +176,6 @@
 #include <optional>
 #endif
 
-#ifdef JS_STD_TIMEPOINT
-#include <chrono>
-#include <type_traits>
-#endif
-
 #ifndef JS_IF_CONSTEXPR
 #if __cpp_if_constexpr
 #define JS_IF_CONSTEXPR(exp) if constexpr (exp)
@@ -167,18 +186,9 @@
 #endif
 #endif
 
-#if JS_NO_NODISCARD
-#define JS_NODISCARD
-#else
-#if __cplusplus >= 201703L
-#define JS_NODISCARD [[nodiscard]]
-#else
-#define JS_NODISCARD
-#endif
-#endif
-
 #if defined(min) || defined(max)
-#error min or max macro is defined. Make sure these are not defined before including json_struct.h.\
+
+#error min or max macro is defined. Make sure these are not defined before including Include_json_struct.h.\
  Use "#define NOMINMAX 1" before including Windows.h
 #endif
 
@@ -328,8 +338,8 @@ static inline const unsigned char *lookup()
     /*64*/ 0,       2,       2,       2,       2,       2 | 64,  2,       2,
     /*72*/ 2,       2,       2,       2,       2,       2,       2,       2,
     /*80*/ 2,       2,       2,       2,       2,       2,       2,       2,
-    /*88*/ 2,       2,       2,       0,       1,       0,       32,      32,
-    /*96*/ 32,      2,       2,       2,       2,       2 | 64,  2,       2,
+    /*88*/ 2,       2,       2,       0,       1,       32,      32,      32,
+    /*96*/ 0,       2,       2,       2,       2,       2 | 64,  2,       2,
     /*104*/ 2,      2,       2,       2,       2,       2,       2,       2,
     /*112*/ 2,      2,       2,       2,       2,       2,       2,       2,
     /*120*/ 2,      2,       2,       0,       0,       0,       0,       0,
@@ -365,8 +375,6 @@ enum class Error : unsigned char
   ExpectedObjectEnd,
   ExpectedArrayStart,
   ExpectedArrayEnd,
-  UnexpectedArrayEnd,
-  UnexpectedObjectEnd,
   IllegalPropertyName,
   IllegalPropertyType,
   IllegalDataValue,
@@ -382,7 +390,6 @@ enum class Error : unsigned char
   NonContigiousMemory,
   ScopeHasEnded,
   KeyNotFound,
-  DuplicateInSet,
   UnknownError,
   UserDefinedErrors
 };
@@ -407,10 +414,139 @@ public:
   }
 };
 
+template <typename T>
+struct CallbackContainer;
 } // namespace Internal
+
+template <typename T>
+class RefCounter
+{
+public:
+  RefCounter()
+    : callbackContainer(nullptr)
+    , index(0)
+  {
+  }
+
+  RefCounter(size_t index, Internal::CallbackContainer<T> *callbackContainer)
+    : callbackContainer(callbackContainer)
+    , index(index)
+  {
+    inc();
+  }
+  RefCounter(const RefCounter<T> &other)
+    : callbackContainer(other.callbackContainer)
+  {
+    inc();
+  }
+
+  RefCounter<T> &operator=(const RefCounter<T> &other)
+  {
+    dec();
+    callbackContainer = other.callbackContainer;
+    index = other.index;
+    inc();
+    return *this;
+  }
+
+  ~RefCounter()
+  {
+    dec();
+  }
+
+private:
+  void inc();
+  void dec();
+  Internal::CallbackContainer<T> *callbackContainer;
+  size_t index;
+};
+
+template <typename T>
+class Callback
+{
+public:
+  Callback()
+    : ref(0)
+  {
+  }
+
+  Callback(std::function<T> &callback)
+    : ref(0)
+    , callback(callback)
+  {
+  }
+  Callback(const Callback<T> &other)
+    : ref(other.ref.load())
+    , callback(other.callback)
+  {
+  }
+  Callback &operator=(const Callback<T> &other)
+  {
+    ref.store(other.ref.load());
+    callback = other.callback;
+    return *this;
+  }
+
+  void inc()
+  {
+    ++ref;
+  }
+  void dec()
+  {
+    --ref;
+  }
+
+  std::atomic<int> ref;
+  std::function<T> callback;
+};
 
 namespace Internal
 {
+template <typename T>
+struct CallbackContainer
+{
+public:
+  const RefCounter<T> addCallback(std::function<T> &callback)
+  {
+    for (size_t i = 0; i < vec.size(); i++)
+    {
+      if (vec[i].ref.load() == 0)
+      {
+        vec[i].callback = callback;
+        return RefCounter<T>(i, this);
+      }
+    }
+    vec.push_back(Callback<T>(callback));
+    return RefCounter<T>(vec.size() - 1, this);
+  }
+
+  template <typename... Ts>
+  void invokeCallbacks(Ts &... args)
+  {
+    for (auto &callbackHandler : vec)
+    {
+      if (callbackHandler.ref.load())
+      {
+        callbackHandler.callback(args...);
+      }
+    }
+  }
+  void inc(size_t index)
+  {
+    assert(index < vec.size());
+    ++vec[index].ref;
+  }
+  void dec(size_t index)
+  {
+    assert(index < vec.size());
+    assert(vec[index].ref.load() != 0);
+    --vec[index].ref;
+  }
+
+private:
+  std::vector<Callback<T>> vec;
+};
+
 struct ScopeCounter
 {
   JS::Type type;
@@ -432,6 +568,24 @@ struct ScopeCounter
 };
 } // namespace Internal
 
+template <typename T>
+inline void RefCounter<T>::inc()
+{
+  if (callbackContainer)
+    callbackContainer->inc(index);
+}
+
+template <typename T>
+inline void RefCounter<T>::dec()
+{
+  if (callbackContainer)
+    callbackContainer->dec(index);
+}
+
+class Tokenizer;
+typedef RefCounter<void(const char *)> ReleaseCBRef;
+typedef RefCounter<void(Tokenizer &)> NeedMoreDataCBRef;
+
 class Tokenizer
 {
 public:
@@ -449,8 +603,8 @@ public:
   void resetData(const std::vector<Token> *parsedData, size_t index);
   size_t registeredBuffers() const;
 
-  void setNeedMoreDataCallback(std::function<void(Tokenizer &)> callback);
-  void setReleaseCallback(std::function<void(const char *)> &callback);
+  NeedMoreDataCBRef registerNeedMoreDataCallback(std::function<void(Tokenizer &)> callback);
+  ReleaseCBRef registerReleaseCallback(std::function<void(const char *)> &callback);
   Error nextToken(Token &next_token);
   const char *currentPosition() const;
 
@@ -517,30 +671,14 @@ private:
   std::vector<DataRef> data_list;
   std::vector<Internal::ScopeCounter> scope_counter;
   std::vector<Type> container_stack;
-  std::function<void(const char *)> release_callback;
-  std::function<void(Tokenizer &)> need_more_data_callback;
+  Internal::CallbackContainer<void(const char *)> release_callbacks;
+  Internal::CallbackContainer<void(Tokenizer &)> need_more_data_callbacks;
   std::vector<std::pair<size_t, std::string *>> copy_buffers;
   const std::vector<Token> *parsed_data_vector;
   Internal::ErrorContext error_context;
 };
 
-namespace Internal
-{
-template <size_t SIZE>
-struct StringLiteral
-{
-  const char *data;
-  enum size_enum
-  {
-    size = SIZE
-  };
-};
-template <size_t SIZE>
-constexpr StringLiteral<SIZE - 1> makeStringLiteral(const char (&literal)[SIZE])
-{
-  return {literal};
-}
-}
+
 
 class SerializerOptions
 {
@@ -554,7 +692,6 @@ public:
   SerializerOptions(Style style = Style::Pretty);
 
   int shiftSize() const;
-  void setShiftSize(unsigned char set);
 
   Style style() const;
   void setStyle(Style style);
@@ -573,8 +710,8 @@ public:
   const std::string &postfix() const;
 
 private:
-  uint8_t m_shift_size;
-  uint8_t m_depth;
+  unsigned char m_shift_size;
+  unsigned char m_depth;
   Style m_style;
   bool m_convert_ascii_to_string;
 
@@ -587,35 +724,25 @@ private:
 class SerializerBuffer
 {
 public:
-  SerializerBuffer()
-    : buffer(nullptr)
-    , size(0)
-    , used(0)
-  {}
-  SerializerBuffer(char *buffer, size_t size)
-    : buffer(buffer)
-    , size(size)
-    , used(0)
-  {}
-  size_t free() const
+  bool free() const
   {
-    return size - used;
+    return size - used != 0;
   }
-  void append(const char *data, size_t size);
-  template<size_t SIZE>
-  void append(const char *data);
+  bool append(const char *data, size_t size);
   char *buffer;
   size_t size;
   size_t used;
 };
 
+class Serializer;
+typedef RefCounter<void(Serializer &)> BufferRequestCBRef;
 class Serializer
 {
 public:
   Serializer();
   Serializer(char *buffer, size_t size);
 
-  void setBuffer(char *buffer, size_t size);
+  void appendBuffer(char *buffer, size_t size);
   void setOptions(const SerializerOptions &option);
   SerializerOptions options() const
   {
@@ -628,11 +755,10 @@ public:
   {
     return write(str.c_str(), str.size());
   }
-  template<size_t SIZE>
-  inline bool write(const Internal::StringLiteral<SIZE> &strLiteral);
 
-  void setRequestBufferCallback(std::function<void(Serializer &)> callback);
-  const SerializerBuffer &currentBuffer() const;
+  const BufferRequestCBRef addRequestBufferCallback(std::function<void(Serializer &)> callback);
+  const std::vector<SerializerBuffer> &buffers() const;
+  void clearBuffers();
 
 private:
   void askForMoreBuffers();
@@ -640,11 +766,12 @@ private:
   bool writeAsString(const DataRef &data);
   bool write(Type type, const DataRef &data);
 
-  std::function<void(Serializer &)> m_request_buffer_callback;
-  SerializerBuffer m_current_buffer;
+  Internal::CallbackContainer<void(Serializer &)> m_request_buffer_callbacks;
+  std::vector<SerializerBuffer *> m_unused_buffers;
+  std::vector<SerializerBuffer> m_all_buffers;
 
-  bool m_first;
-  bool m_token_start;
+  bool m_first : 1;
+  bool m_token_start : 1;
   SerializerOptions m_option;
 };
 
@@ -710,11 +837,8 @@ inline void Tokenizer::addData(const std::vector<Token> *parsedData)
 inline void Tokenizer::resetData(const char *data, size_t size, size_t index)
 {
 
-  if (release_callback)
-  {
-    for (auto &data_buffer : data_list)
-      release_callback(data_buffer.data);
-  }
+  for (auto &data_buffer : data_list)
+    release_callbacks.invokeCallbacks(data_buffer.data);
   data_list.clear();
   parsed_data_vector = nullptr;
   cursor_index = index;
@@ -724,11 +848,8 @@ inline void Tokenizer::resetData(const char *data, size_t size, size_t index)
 
 inline void Tokenizer::resetData(const std::vector<Token> *parsedData, size_t index)
 {
-  if (release_callback)
-  {
-    for (auto &data_buffer : data_list)
-      release_callback(data_buffer.data);
-  }
+  for (auto &data_buffer : data_list)
+    release_callbacks.invokeCallbacks(data_buffer.data);
   data_list.clear();
   parsed_data_vector = parsedData;
   cursor_index = index;
@@ -740,14 +861,14 @@ inline size_t Tokenizer::registeredBuffers() const
   return data_list.size();
 }
 
-inline void Tokenizer::setNeedMoreDataCallback(std::function<void(Tokenizer &)> callback)
+inline NeedMoreDataCBRef Tokenizer::registerNeedMoreDataCallback(std::function<void(Tokenizer &)> callback)
 {
-  need_more_data_callback = callback;
+  return need_more_data_callbacks.addCallback(callback);
 }
 
-inline void Tokenizer::setReleaseCallback(std::function<void(const char *)> &callback)
+inline ReleaseCBRef Tokenizer::registerReleaseCallback(std::function<void(const char *)> &callback)
 {
-  release_callback = callback;
+  return release_callbacks.addCallback(callback);
 }
 
 inline Error Tokenizer::nextToken(Token &next_token)
@@ -809,22 +930,12 @@ inline Error Tokenizer::nextToken(Token &next_token)
       container_stack.push_back(next_token.value_type);
     if (next_token.value_type == Type::ArrayEnd)
     {
-      if (!container_stack.size() || container_stack.back() != JS::Type::ArrayStart)
-      {
-        error = Error::UnexpectedArrayEnd;
-        updateErrorContext(error);
-        return error;
-      }
+      assert(container_stack.size() && container_stack.back() == JS::Type::ArrayStart);
       container_stack.pop_back();
     }
     if (next_token.value_type == Type::ObjectEnd)
     {
-      if (!container_stack.size() || container_stack.back() != JS::Type::ObjectStart)
-      {
-        error = Error::UnexpectedObjectEnd;
-        updateErrorContext(error);
-        return error;
-      }
+      assert(container_stack.size() && container_stack.back() == JS::Type::ObjectStart);
       container_stack.pop_back();
     }
     if (scope_counter.size())
@@ -919,8 +1030,6 @@ static const char *error_strings[] = {
   "ExpectedObjectEnd",
   "ExpectedArrayStart",
   "ExpectedArrayEnd",
-  "UnexpectedArrayEnd",
-  "UnexpectedObjectEnd",
   "IllegalPropertyName",
   "IllegalPropertyType",
   "IllegalDataValue",
@@ -936,16 +1045,13 @@ static const char *error_strings[] = {
   "NonContigiousMemory",
   "ScopeHasEnded",
   "KeyNotFound",
-  "DuplicateInSet",
   "UnknownError",
-  "UserDefinedErrors",
 };
 }
 
 inline std::string Tokenizer::makeErrorString() const
 {
-  static_assert(sizeof(Internal::error_strings) / sizeof *Internal::error_strings ==
-                  size_t(Error::UserDefinedErrors) + 1,
+  static_assert(sizeof(Internal::error_strings) / sizeof *Internal::error_strings == size_t(Error::UserDefinedErrors),
                 "Please add missing error message");
 
   std::string retString("Error");
@@ -1159,6 +1265,7 @@ inline Error Tokenizer::findStartOfNextValue(Type *type, const DataRef &json_dat
     {
       *type = Type::Ascii;
       *chars_ahead = current_pos - cursor_index;
+      ;
       return Error::NoError;
     }
     else if (lc == 0)
@@ -1250,8 +1357,7 @@ inline Error Tokenizer::findTokenEnd(const DataRef &json_data, size_t *chars_ahe
 
 inline void Tokenizer::requestMoreData()
 {
-  if (need_more_data_callback)
-    need_more_data_callback(*this);
+  need_more_data_callbacks.invokeCallbacks(*this);
 }
 
 inline void Tokenizer::releaseFirstDataRef()
@@ -1273,8 +1379,7 @@ inline void Tokenizer::releaseFirstDataRef()
 
   const char *data_to_release = json_data.data;
   data_list.erase(data_list.begin());
-  if (release_callback)
-    release_callback(data_to_release);
+  release_callbacks.invokeCallbacks(data_to_release);
 }
 
 inline Error Tokenizer::populateFromDataRef(DataRef &data, Type &type, const DataRef &json_data)
@@ -1589,56 +1694,60 @@ inline Error Tokenizer::updateErrorContext(Error error, const std::string &custo
       ? DataRef(parsed_data_vector->front().value.data,
                 size_t(parsed_data_vector->back().value.data - parsed_data_vector->front().value.data))
       : data_list.front();
-  int64_t real_cursor_index = parsed_data_vector && parsed_data_vector->size()
-                               ? int64_t (parsed_data_vector->at(cursor_index).value.data - json_data.data)
-                               : int64_t(cursor_index);
-  const int64_t stop_back = real_cursor_index - std::min(int64_t(real_cursor_index), int64_t(line_range_context));
-  const int64_t stop_forward = std::min(real_cursor_index + int64_t(line_range_context), int64_t(json_data.size));
+  size_t real_cursor_index = parsed_data_vector && parsed_data_vector->size()
+                               ? size_t(parsed_data_vector->at(cursor_index).value.data - json_data.data)
+                               : cursor_index;
+  const size_t stop_back = real_cursor_index - std::min(real_cursor_index, line_range_context);
+  const size_t stop_forward = std::min(real_cursor_index + line_range_context, json_data.size);
   std::vector<Internal::Lines> lines;
-  lines.push_back({0, size_t(real_cursor_index)});
-  assert(real_cursor_index <= int64_t(json_data.size));
-  int64_t lines_back = 0;
-  int64_t lines_forward = 0;
-  int64_t cursor_back;
-  int64_t cursor_forward;
+  lines.push_back({0, real_cursor_index});
+  assert(real_cursor_index <= json_data.size);
+  size_t lines_back = 0;
+  size_t lines_forward = 0;
+  size_t cursor_back;
+  size_t cursor_forward;
+
+  if (real_cursor_index == 0) {
+      return Error::InvalidToken;
+  }
   for (cursor_back = real_cursor_index - 1; cursor_back > stop_back; cursor_back--)
   {
     if (*(json_data.data + cursor_back) == '\n')
     {
-      lines.front().start = size_t(cursor_back + 1);
+      lines.front().start = cursor_back + 1;
       lines_back++;
       if (lines_back == 1)
-        error_context.character = size_t(real_cursor_index - cursor_back);
-      if (lines_back == int64_t(line_context))
+        error_context.character = real_cursor_index - cursor_back;
+      if (lines_back == line_context)
       {
         lines_back--;
         break;
       }
 
-      lines.insert(lines.begin(), {0, size_t(cursor_back)});
+      lines.insert(lines.begin(), {0, cursor_back});
     }
   }
-  if (lines.front().start == 0 && cursor_back > 0)
-      lines.front().start = size_t(cursor_back);
+  if (lines.front().start == 0)
+    lines.front().start = cursor_back;
   bool add_new_line = false;
   for (cursor_forward = real_cursor_index; cursor_forward < stop_forward; cursor_forward++)
   {
     if (add_new_line)
     {
-      lines.push_back({size_t(cursor_forward), 0});
+      lines.push_back({cursor_forward, 0});
       add_new_line = false;
     }
     if (*(json_data.data + cursor_forward) == '\n')
     {
-      lines.back().end = size_t(cursor_forward);
+      lines.back().end = cursor_forward;
       lines_forward++;
-      if (lines_forward == int64_t(line_context))
+      if (lines_forward == line_context)
         break;
       add_new_line = true;
     }
   }
   if (lines.back().end == 0)
-    lines.back().end = size_t(cursor_forward - 1);
+    lines.back().end = cursor_forward - 1;
 
   if (lines.size() > 1)
   {
@@ -1647,19 +1756,272 @@ inline Error Tokenizer::updateErrorContext(Error error, const std::string &custo
     {
       error_context.lines.push_back(std::string(json_data.data + line.start, line.end - line.start));
     }
-    error_context.line = size_t(lines_back);
+    error_context.line = lines_back;
   }
   else
   {
     error_context.line = 0;
 
-    int64_t left = real_cursor_index > int64_t(range_context) ? real_cursor_index - int64_t(range_context) : 0;
-    int64_t right =
-      real_cursor_index + int64_t(range_context) > int64_t(json_data.size) ? int64_t(json_data.size) : real_cursor_index + int64_t(range_context);
-    error_context.character = size_t(real_cursor_index - left);
-    error_context.lines.push_back(std::string(json_data.data + left, size_t(right - left)));
+    size_t left = real_cursor_index > range_context ? real_cursor_index - range_context : 0;
+    size_t right =
+      real_cursor_index + range_context > json_data.size ? json_data.size : real_cursor_index + range_context;
+    error_context.character = real_cursor_index - left;
+    error_context.lines.push_back(std::string(json_data.data + left, right - left));
   }
   return error;
+}
+
+inline SerializerOptions::SerializerOptions(Style style)
+
+  : m_shift_size(4)
+  , m_depth(0)
+  , m_style(style)
+  , m_convert_ascii_to_string(true)
+  , m_token_delimiter(",")
+{
+  m_value_delimiter = m_style == Pretty ? std::string(" : ") : std::string(":");
+  m_postfix = m_style == Pretty ? std::string("\n") : std::string("");
+}
+
+inline int SerializerOptions::shiftSize() const
+{
+  return m_shift_size;
+}
+
+inline unsigned char SerializerOptions::depth() const
+{
+  return m_depth;
+}
+
+inline SerializerOptions::Style SerializerOptions::style() const
+{
+  return m_style;
+}
+
+inline bool SerializerOptions::convertAsciiToString() const
+{
+  return m_convert_ascii_to_string;
+}
+
+inline void SerializerOptions::setConvertAsciiToString(bool set)
+{
+  m_convert_ascii_to_string = set;
+}
+
+inline void SerializerOptions::setStyle(Style style)
+{
+  m_style = style;
+  m_postfix = m_style == Pretty ? std::string("\n") : std::string("");
+  m_value_delimiter = m_style == Pretty ? std::string(" : ") : std::string(":");
+  setDepth(m_depth);
+}
+
+inline void SerializerOptions::skipDelimiter(bool skip)
+{
+  if (skip)
+    m_token_delimiter = "";
+  else
+    m_token_delimiter = ",";
+}
+
+inline void SerializerOptions::setDepth(int depth)
+{
+  m_depth = (unsigned char)depth;
+  m_prefix = m_style == Pretty ? std::string(depth * size_t(m_shift_size), ' ') : std::string();
+}
+
+inline const std::string &SerializerOptions::prefix() const
+{
+  return m_prefix;
+}
+inline const std::string &SerializerOptions::tokenDelimiter() const
+{
+  return m_token_delimiter;
+}
+inline const std::string &SerializerOptions::valueDelimiter() const
+{
+  return m_value_delimiter;
+}
+inline const std::string &SerializerOptions::postfix() const
+{
+  return m_postfix;
+}
+
+inline bool SerializerBuffer::append(const char *data, size_t data_size)
+{
+  if (used + data_size > size)
+    return false;
+
+  memcpy(buffer + used, data, data_size);
+  used += data_size;
+  return true;
+}
+
+inline Serializer::Serializer()
+  : m_first(true)
+  , m_token_start(true)
+{
+}
+
+inline Serializer::Serializer(char *buffer, size_t size)
+  : m_first(true)
+  , m_token_start(true)
+
+{
+  appendBuffer(buffer, size);
+}
+
+inline void Serializer::appendBuffer(char *buffer, size_t size)
+{
+  m_all_buffers.push_back({buffer, size, 0});
+  m_unused_buffers.push_back(&m_all_buffers.back());
+}
+
+inline void Serializer::setOptions(const SerializerOptions &option)
+{
+  m_option = option;
+}
+
+inline bool Serializer::write(const Token &in_token)
+{
+  const Token &token = in_token;
+  if (!m_token_start)
+  {
+    if (token.value_type != Type::ObjectEnd && token.value_type != Type::ArrayEnd)
+    {
+      if (!write(m_option.tokenDelimiter()))
+        return false;
+    }
+  }
+
+  if (m_first)
+  {
+    m_first = false;
+  }
+  else
+  {
+    if (!write(m_option.postfix()))
+      return false;
+  }
+
+  if (token.value_type == Type::ObjectEnd || token.value_type == Type::ArrayEnd)
+  {
+    assert(m_option.depth() > 0);
+    m_option.setDepth(m_option.depth() - 1);
+  }
+
+  if (!write(m_option.prefix()))
+    return false;
+
+  if (token.name.size)
+  {
+    if (!write(token.name_type, token.name))
+      return false;
+
+    if (!write(m_option.valueDelimiter()))
+      return false;
+  }
+
+  if (!write(token.value_type, token.value))
+    return false;
+
+  m_token_start = (token.value_type == Type::ObjectStart || token.value_type == Type::ArrayStart);
+  if (m_token_start)
+  {
+    m_option.setDepth(m_option.depth() + 1);
+  }
+  return true;
+}
+
+inline const BufferRequestCBRef Serializer::addRequestBufferCallback(std::function<void(Serializer &)> callback)
+{
+  return m_request_buffer_callbacks.addCallback(callback);
+}
+
+inline const std::vector<SerializerBuffer> &Serializer::buffers() const
+{
+  return m_all_buffers;
+}
+
+inline void Serializer::clearBuffers()
+{
+  m_all_buffers.clear();
+  m_unused_buffers.clear();
+}
+
+inline void Serializer::askForMoreBuffers()
+{
+  m_request_buffer_callbacks.invokeCallbacks(*this);
+}
+
+inline void Serializer::markCurrentSerializerBufferFull()
+{
+  m_unused_buffers.erase(m_unused_buffers.begin());
+  if (m_unused_buffers.size() == 0)
+    askForMoreBuffers();
+}
+
+inline bool Serializer::writeAsString(const DataRef &data)
+{
+  bool written;
+  written = write("\"", 1);
+  if (!written)
+    return false;
+
+  written = write(data.data, data.size);
+  if (!written)
+    return false;
+
+  written = write("\"", 1);
+
+  return written;
+}
+
+inline bool Serializer::write(Type type, const DataRef &data)
+{
+  bool written;
+  switch (type)
+  {
+  case Type::String:
+    written = writeAsString(data);
+    break;
+  case Type::Ascii:
+    if (m_option.convertAsciiToString())
+      written = writeAsString(data);
+    else
+      written = write(data.data, data.size);
+    break;
+  case Type::Null:
+    written = write("null", 4);
+    break;
+  default:
+    written = write(data.data, data.size);
+    break;
+  }
+  return written;
+}
+
+inline bool Serializer::write(const char *data, size_t size)
+{
+  if (!size)
+    return true;
+  if (m_unused_buffers.size() == 0)
+    askForMoreBuffers();
+  size_t written = 0;
+  while (m_unused_buffers.size() && written < size)
+  {
+    SerializerBuffer *first = m_unused_buffers.front();
+    size_t free = first->free();
+    if (!free)
+    {
+      markCurrentSerializerBufferFull();
+      continue;
+    }
+    size_t to_write = std::min(size, free);
+    first->append(data + written, to_write);
+    written += to_write;
+  }
+  return written == size;
 }
 
 static inline JS::Error reformat(const char *data, size_t size, std::string &out,
@@ -1673,24 +2035,24 @@ static inline JS::Error reformat(const char *data, size_t size, std::string &out
   Serializer serializer;
   serializer.setOptions(options);
   size_t last_pos = 0;
-  serializer.setRequestBufferCallback([&out, &last_pos](Serializer &serializer_p) {
+  auto cbref = serializer.addRequestBufferCallback([&out, &last_pos](Serializer &serializer_p) {
     size_t end = out.size();
     out.resize(end * 2);
-    serializer_p.setBuffer(&out[0] + end, end);
+    serializer_p.appendBuffer(&out[0] + end, end);
     last_pos = end;
   });
   if (out.empty())
     out.resize(4096);
-  serializer.setBuffer(&out[0], out.size());
+  serializer.appendBuffer(&out[0], out.size());
 
-  while (error == Error::NoError)
+  while (true)
   {
     error = tokenizer.nextToken(token);
     if (error != Error::NoError)
       break;
     serializer.write(token);
   }
-  out.resize(last_pos + serializer.currentBuffer().used);
+  out.resize(last_pos + serializer.buffers().back().used);
   if (error == Error::NeedMoreData)
     return Error::NoError;
 
@@ -1852,338 +2214,6 @@ constexpr Tuple<Ts...> makeTuple(Ts... args)
 }
 // Tuple end
 
-inline SerializerOptions::SerializerOptions(Style style)
-
-  : m_shift_size(style == Compact ? 0 : 2)
-  , m_depth(0)
-  , m_style(style)
-  , m_convert_ascii_to_string(true)
-  , m_token_delimiter(",")
-  , m_value_delimiter(style == Pretty ? ": " : ":")
-  , m_postfix(style == Pretty ? "\n" : "")
-{
-}
-
-inline int SerializerOptions::shiftSize() const
-{
-  return m_shift_size;
-}
-
-inline void SerializerOptions::setShiftSize(unsigned char set)
-{
-  m_shift_size = set;
-}
-
-inline unsigned char SerializerOptions::depth() const
-{
-  return m_depth;
-}
-
-inline SerializerOptions::Style SerializerOptions::style() const
-{
-  return m_style;
-}
-
-inline bool SerializerOptions::convertAsciiToString() const
-{
-  return m_convert_ascii_to_string;
-}
-
-inline void SerializerOptions::setConvertAsciiToString(bool set)
-{
-  m_convert_ascii_to_string = set;
-}
-
-inline void SerializerOptions::setStyle(Style style)
-{
-  m_style = style;
-  m_postfix = m_style == Pretty ? std::string("\n") : std::string("");
-  m_value_delimiter = m_style == Pretty ? std::string(" : ") : std::string(":");
-  setDepth(m_depth);
-}
-
-inline void SerializerOptions::skipDelimiter(bool skip)
-{
-  if (skip)
-    m_token_delimiter = "";
-  else
-    m_token_delimiter = ",";
-}
-
-inline void SerializerOptions::setDepth(int depth)
-{
-  m_depth = (unsigned char)depth;
-  m_prefix = m_style == Pretty ? std::string(depth * size_t(m_shift_size), ' ') : std::string();
-}
-
-inline const std::string &SerializerOptions::prefix() const
-{
-  return m_prefix;
-}
-inline const std::string &SerializerOptions::tokenDelimiter() const
-{
-  return m_token_delimiter;
-}
-inline const std::string &SerializerOptions::valueDelimiter() const
-{
-  return m_value_delimiter;
-}
-inline const std::string &SerializerOptions::postfix() const
-{
-  return m_postfix;
-}
-
-inline void SerializerBuffer::append(const char *data, size_t data_size)
-{
-  assert(used + data_size <= size);
-  memcpy(buffer + used, data, data_size);
-  used += data_size;
-}
-
-template<size_t SIZE>
-inline void SerializerBuffer::append(const char *data)
-{
-  assert(used + SIZE <= size);
-  memcpy(buffer + used, data, SIZE);
-  used += SIZE;
-}
-
-inline Serializer::Serializer()
-  : m_first(true)
-  , m_token_start(true)
-{
-}
-
-inline Serializer::Serializer(char *buffer, size_t size)
-  : m_current_buffer(buffer,size)
-  , m_first(true)
-  , m_token_start(true)
-
-{
-}
-
-inline void Serializer::setBuffer(char *buffer, size_t size)
-{
-  m_current_buffer = SerializerBuffer(buffer, size);
-}
-
-inline void Serializer::setOptions(const SerializerOptions &option)
-{
-  m_option = option;
-}
-
-
-inline bool Serializer::write(const Token &in_token)
-{
-  auto begining_literals = makeTuple( JS::Internal::makeStringLiteral("\n  "),
-                                      Internal::makeStringLiteral("\n    "),
-                                      Internal::makeStringLiteral("\n      "),
-                                      Internal::makeStringLiteral("\n        "),
-                                      Internal::makeStringLiteral("\n          "),
-                                      Internal::makeStringLiteral(",\n  "),
-                                      Internal::makeStringLiteral(",\n    "),
-                                      Internal::makeStringLiteral(",\n      "),
-                                      Internal::makeStringLiteral(",\n        "),
-                                      Internal::makeStringLiteral(",\n          "));
-  //auto begining_literals_compat = makeTuple( Internal::makeStringLiteral(",\""));
-  const Token &token = in_token;
-
-  bool isEnd = token.value_type == Type::ObjectEnd || token.value_type == Type::ArrayEnd;
-  if (isEnd)
-  {
-    if (m_option.depth() <= 0)
-    {
-      return false;
-    }
-    m_option.setDepth(m_option.depth() - 1);
-  }
-
-  bool shortcut_front = false;
-  if (m_option.shiftSize() == 2 && !m_first)
-  {
-    if (!m_token_start && !isEnd)
-    {
-      if (m_option.depth() == 1)
-        shortcut_front = write(begining_literals.get<5>());
-      else if (m_option.depth() == 2)
-        shortcut_front = write(begining_literals.get<6>());
-      else if (m_option.depth() == 3)
-        shortcut_front = write(begining_literals.get<7>());
-      else if (m_option.depth() == 4)
-        shortcut_front = write(begining_literals.get<8>());
-      else if (m_option.depth() == 5)
-        shortcut_front = write(begining_literals.get<9>());
-    }
-    else
-    {
-      if (m_option.depth() == 1)
-        shortcut_front = write(begining_literals.get<0>());
-      else if (m_option.depth() == 2)
-        shortcut_front = write(begining_literals.get<1>());
-      else if (m_option.depth() == 3)
-        shortcut_front = write(begining_literals.get<2>());
-      else if (m_option.depth() == 4)
-        shortcut_front = write(begining_literals.get<3>());
-      else if (m_option.depth() == 5)
-        shortcut_front = write(begining_literals.get<4>());
-
-    }
-  }
-
-  if (!shortcut_front)
-  {
-    if (!m_token_start)
-    {
-      if (!isEnd)
-      {
-        if (!m_option.tokenDelimiter().empty())
-        {
-          if (!write(Internal::makeStringLiteral(",")))
-            return false;
-        }
-      }
-    }
-
-    if (m_first)
-    {
-      m_first = false;
-    }
-    else
-    {
-      if (!m_option.postfix().empty())
-        if (!write(m_option.postfix()))
-          return false;
-    }
-
-
-    if (!m_option.prefix().empty())
-      if (!write(m_option.prefix()))
-        return false;
-
-  }
-  if (token.name.size)
-  {
-    if (!write(token.name_type, token.name))
-      return false;
-
-    if (m_option.style() == SerializerOptions::Pretty)
-    {
-      if (!write(Internal::makeStringLiteral(": ")))
-        return false;
-    }
-    else
-    {
-      if (!write(Internal::makeStringLiteral(":")))
-        return false;
-    }
-  }
-
-  if (!write(token.value_type, token.value))
-    return false;
-
-  m_token_start = (token.value_type == Type::ObjectStart || token.value_type == Type::ArrayStart);
-  if (m_token_start)
-  {
-    m_option.setDepth(m_option.depth() + 1);
-  }
-  return true;
-}
-
-inline void Serializer::setRequestBufferCallback(std::function<void(Serializer &)> callback)
-{
-  m_request_buffer_callback = callback;
-}
-
-inline const SerializerBuffer &Serializer::currentBuffer() const
-{
-  return m_current_buffer;
-}
-
-inline void Serializer::askForMoreBuffers()
-{
-  if (m_request_buffer_callback)
-    m_request_buffer_callback(*this);
-}
-
-inline void Serializer::markCurrentSerializerBufferFull()
-{
-  m_current_buffer = SerializerBuffer();
-  askForMoreBuffers();
-}
-
-inline bool Serializer::writeAsString(const DataRef &data)
-{
-  bool written;
-  written = write(Internal::makeStringLiteral("\""));
-  if (!written)
-    return false;
-
-  written = write(data.data, data.size);
-  if (!written)
-    return false;
-
-  written = write(Internal::makeStringLiteral("\""));
-
-  return written;
-}
-
-inline bool Serializer::write(Type type, const DataRef &data)
-{
-  bool written;
-  switch (type)
-  {
-  case Type::String:
-    written = writeAsString(data);
-    break;
-  case Type::Ascii:
-    if (m_option.convertAsciiToString())
-      written = writeAsString(data);
-    else
-      written = write(data.data, data.size);
-    break;
-  case Type::Null:
-    written = write("null", 4);
-    break;
-  default:
-    written = write(data.data, data.size);
-    break;
-  }
-  return written;
-}
-
-inline bool Serializer::write(const char *data, size_t size)
-{
-  if (!size)
-    return true;
-  size_t written = 0;
-  while (written < size)
-  {
-    size_t free = m_current_buffer.free();
-    if (free == 0)
-    {
-      markCurrentSerializerBufferFull();
-      if (!m_current_buffer.free())
-        return false;
-      continue;
-    }
-    size_t to_write = std::min(size - written, free);
-    m_current_buffer.append(data + written, to_write);
-    written += to_write;
-  }
-  return written == size;
-}
-
-template<size_t SIZE>
-inline bool Serializer::write(const Internal::StringLiteral<SIZE> &strLiteral)
-{
-  if (m_current_buffer.free() < SIZE)
-    return write(strLiteral.data, SIZE);
-
-  m_current_buffer.append<SIZE>(strLiteral.data);
-  return true;
-}
-
-
 template <typename T>
 struct Nullable
 {
@@ -2195,15 +2225,7 @@ struct Nullable
     : data(t)
   {
   }
-  Nullable(T &&t)
-    : data(std::move(t))
-  {
-  }
 
-  Nullable(Nullable<T> &&t)
-    : data(std::move(t.data))
-  {
-  }
   Nullable(const Nullable<T> &t)
     : data(t.data)
   {
@@ -2212,22 +2234,6 @@ struct Nullable
   Nullable<T> &operator=(const T &other)
   {
     data = other;
-    return *this;
-  }
-  Nullable<T> &operator=(T &&other)
-  {
-    data = std::move(other);
-    return *this;
-  }
-
-  Nullable<T> &operator=(const Nullable<T> &other)
-  {
-    data = other.data;
-    return *this;
-  }
-  Nullable<T> &operator=(Nullable<T> &&other)
-  {
-    data = std::move(other.data);
     return *this;
   }
 
@@ -2255,18 +2261,8 @@ struct NullableChecked
     , null(false)
   {
   }
-  NullableChecked(T &&t)
-    : data(std::move(t))
-    , null(false)
-  {
-  }
   NullableChecked(const NullableChecked<T> &t)
     : data(t.data)
-    , null(t.null)
-  {
-  }
-  NullableChecked(NullableChecked<T> &&t)
-    : data(std::move(t.data))
     , null(t.null)
   {
   }
@@ -2274,25 +2270,6 @@ struct NullableChecked
   {
     data = other;
     null = false;
-    return *this;
-  }
-  NullableChecked<T> &operator=(T &&other)
-  {
-    data = std::move(other);
-    null = false;
-    return *this;
-  }
-
-  NullableChecked<T> &operator=(const NullableChecked<T> &other)
-  {
-    data = other.data;
-    null = other.null;
-    return *this;
-  }
-  NullableChecked<T> &operator=(NullableChecked<T> &&other)
-  {
-    data = std::move(other.data);
-    null = other.null;
     return *this;
   }
 
@@ -2319,40 +2296,14 @@ struct Optional
     : data(t)
   {
   }
-  Optional(T &&t)
-    : data(std::move(t))
-  {
-  }
 
   Optional(const Optional<T> &t)
     : data(t.data)
   {
   }
-  Optional(Optional<T> &&t)
-    : data(std::move(t.data))
-  {
-  }
   Optional<T> &operator=(const T &other)
   {
     data = other;
-    return *this;
-  }
-
-  Optional<T> &operator=(T &&other)
-  {
-    data = std::move(other);
-    return *this;
-  }
-
-  Optional<T> &operator=(const Optional<T> &other)
-  {
-    data = other.data;
-    return *this;
-  }
-
-  Optional<T> &operator=(Optional<T> &&other)
-  {
-    data = std::move(other.data);
     return *this;
   }
 
@@ -2381,18 +2332,8 @@ struct OptionalChecked
     , assigned(true)
   {
   }
-  OptionalChecked(T &&t)
-    : data(std::move(t))
-    , assigned(true)
-  {
-  }
   OptionalChecked(const OptionalChecked<T> &t)
     : data(t.data)
-    , assigned(t.assigned)
-  {
-  }
-  OptionalChecked(OptionalChecked<T> &&t)
-    : data(std::move(t.data))
     , assigned(t.assigned)
   {
   }
@@ -2400,24 +2341,6 @@ struct OptionalChecked
   {
     data = other;
     assigned = true;
-    return *this;
-  }
-  OptionalChecked<T> &operator=(T &&other)
-  {
-    data = std::move(other);
-    assigned = true;
-    return *this;
-  }
-  OptionalChecked<T> &operator=(const OptionalChecked<T> &other)
-  {
-    data = other.data;
-    assigned = other.assigned;
-    return *this;
-  }
-  OptionalChecked<T> &operator=(OptionalChecked<T> &&other)
-  {
-    data = std::move(other.data);
-    assigned = other.assigned;
     return *this;
   }
 
@@ -2429,12 +2352,6 @@ struct OptionalChecked
   {
     return data;
   }
-#ifdef JS_STD_OPTIONAL
-  std::optional<T> opt() const
-  {
-    return assigned ? std::optional<T>(data) : std::nullopt;
-  }
-#endif
   T data;
   bool assigned;
   typedef bool IsOptionalType;
@@ -2640,8 +2557,7 @@ struct ParseContext
   explicit ParseContext(const char *data, size_t size, T &to_type)
   {
     tokenizer.addData(data, size);
-    auto this_error = parseTo(to_type);
-    (void)this_error;
+    parseTo(to_type);
   }
   template <size_t SIZE>
   explicit ParseContext(const char (&data)[SIZE])
@@ -2660,51 +2576,6 @@ struct ParseContext
 
   std::string makeErrorString() const
   {
-    if (error == Error::MissingPropertyMember)
-    {
-      if (missing_members.size() == 0)
-      {
-        return "";
-      }
-      else if (missing_members.size() == 1)
-      {
-        return std::string("JSON Object contained member not found in C++ struct/class. JSON Object member is: ") +
-               missing_members.front();
-      }
-      std::string member_string = missing_members.front();
-      for (int i = 1; i < int(missing_members.size()); i++)
-        member_string += std::string(", ") + missing_members[i];
-      return std::string("JSON Object contained members not found in C++ struct/class. JSON Object members are: ") +
-             member_string;
-    }
-    else if (error == Error::UnassignedRequiredMember)
-    {
-      if (unassigned_required_members.size() == 0)
-      {
-        return "";
-      }
-      else if (unassigned_required_members.size() == 1)
-      {
-        return std::string("C++ struct/class has a required member that is not present in input JSON. The unassigned "
-                           "C++ member is: ") +
-               unassigned_required_members.front();
-      }
-      std::string required_string = unassigned_required_members.front();
-      for (int i = 1; i < int(unassigned_required_members.size()); i++)
-        required_string += std::string(", ") + unassigned_required_members[i];
-      return std::string("C++ struct/class has required members that are not present in the input JSON. The unassigned "
-                         "C++ members are: ") +
-             required_string;
-    }
-    if (tokenizer.errorContext().error == Error::NoError && error != Error::NoError)
-    {
-      std::string retString("Error:");
-      if (error <= Error::UserDefinedErrors)
-        retString += Internal::error_strings[int(error)];
-      else
-        retString += "Unknown error";
-      return retString;
-    }
     return tokenizer.makeErrorString();
   }
 
@@ -2714,9 +2585,8 @@ struct ParseContext
   std::vector<std::string> missing_members;
   std::vector<std::string> unassigned_required_members;
   bool allow_missing_members = true;
-  bool allow_unasigned_required_members = true;
+  bool allow_unnasigned_required_members = true;
   bool track_member_assignement_state = true;
-  void *user_data = nullptr;
 };
 
 /*! \def JS_MEMBER
@@ -2807,7 +2677,7 @@ struct JsonStructBaseDummy
 #define JS_INTERNAL_DEFER1(m) m JS_INTERNAL_EMPTY()
 #define JS_INTERNAL_DEFER2(m) m JS_INTERNAL_EMPTY JS_INTERNAL_EMPTY()()
 
-#define JS_INTERNAL_IS_PROBE(...) JS_INTERNAL_SECOND(__VA_ARGS__, 0, 0)
+#define JS_INTERNAL_IS_PROBE(...) JS_INTERNAL_SECOND(__VA_ARGS__, 0)
 #define JS_INTERNAL_PROBE() ~, 1
 
 #define JS_INTERNAL_CAT(a, b) a##b
@@ -2826,8 +2696,7 @@ struct JsonStructBaseDummy
 #define JS_INTERNAL__IF_1_ELSE(...)
 #define JS_INTERNAL__IF_0_ELSE(...) __VA_ARGS__
 
-#define JS_INTERNAL_HAS_MORE_THAN_ONE_ARGS(...)                                                                        \
-  JS_INTERNAL_BOOL(JS_INTERNAL_SECOND(JS_INTERNAL__END_OF_ARGUMENTS_ __VA_ARGS__, 0, 0)())
+#define JS_INTERNAL_HAS_ARGS(...) JS_INTERNAL_BOOL(JS_INTERNAL_FIRST(JS_INTERNAL__END_OF_ARGUMENTS_ __VA_ARGS__)())
 #define JS_INTERNAL__END_OF_ARGUMENTS_() 0
 
 #define JS_MEMBER(member) JS::makeMemberInfo(#member, &JS_OBJECT_T::member)
@@ -2842,31 +2711,20 @@ struct JsonStructBaseDummy
 #define JS_INTERNAL__MAP_MEMBER() JS_INTERNAL_MAP_MEMBER
 
 #define JS_INTERNAL_MAKE_MEMBERS(...)                                                                                  \
-  JS_INTERNAL_IF_ELSE(JS_INTERNAL_HAS_MORE_THAN_ONE_ARGS(__VA_ARGS__))                                                 \
-  (JS_INTERNAL_EXPAND(JS_INTERNAL_EVAL(JS_INTERNAL_MAP_MEMBER(JS::makeMemberInfo, __VA_ARGS__))))(                     \
-    JS_INTERNAL_MAP_APPLY_MEMBER(JS::makeMemberInfo, __VA_ARGS__))
-
-#define JS_INTERNAL_MAP_APPLY_MEMBER(m, first) m(#first, &JS_OBJECT_T::first)
+  JS_INTERNAL_EXPAND(JS_INTERNAL_EVAL(JS_INTERNAL_MAP_MEMBER(JS::makeMemberInfo, __VA_ARGS__)))
 
 #define JS_INTERNAL_MAP_MEMBER(m, first, ...)                                                                          \
-  JS_INTERNAL_MAP_APPLY_MEMBER(m, first)                                                                               \
-  JS_INTERNAL_IF_ELSE(JS_INTERNAL_HAS_MORE_THAN_ONE_ARGS(__VA_ARGS__))                                                 \
-  (, JS_INTERNAL_DEFER2(JS_INTERNAL__MAP_MEMBER)()(m, __VA_ARGS__))(, JS_INTERNAL_MAP_APPLY_MEMBER(m, __VA_ARGS__))
-
-#define JS_INTERNAL_MAP_APPLY_SUPER(m, first) m<first>(#first)
-
+  m(#first, &JS_OBJECT_T::first) JS_INTERNAL_IF_ELSE(JS_INTERNAL_HAS_ARGS(__VA_ARGS__))(                               \
+    , JS_INTERNAL_DEFER2(JS_INTERNAL__MAP_MEMBER)()(m, __VA_ARGS__))(/* Do nothing, just terminate */                  \
+  )
 #define JS_INTERNAL_MAP_SUPER(m, first, ...)                                                                           \
-  JS_INTERNAL_MAP_APPLY_SUPER(m, first)                                                                                \
-  JS_INTERNAL_IF_ELSE(JS_INTERNAL_HAS_MORE_THAN_ONE_ARGS(__VA_ARGS__))                                                 \
-  (, JS_INTERNAL_DEFER2(JS_INTERNAL__MAP_SUPER)()(m, __VA_ARGS__))(, JS_INTERNAL_MAP_APPLY_SUPER(m, __VA_ARGS__))
-
+  m<first>(#first) JS_INTERNAL_IF_ELSE(JS_INTERNAL_HAS_ARGS(__VA_ARGS__))(                                             \
+    , JS_INTERNAL_DEFER2(JS_INTERNAL__MAP_SUPER)()(m, __VA_ARGS__))(/* Do nothing, just terminate */                   \
+  )
 #define JS_INTERNAL__MAP_SUPER() JS_INTERNAL_MAP_SUPER
 
 #define JS_INTERNAL_MAKE_SUPER_CLASSES(...)                                                                            \
-  JS_INTERNAL_IF_ELSE(JS_INTERNAL_HAS_MORE_THAN_ONE_ARGS(__VA_ARGS__))                                                 \
-  (JS_INTERNAL_EXPAND(JS_INTERNAL_EVAL(JS_INTERNAL_MAP_SUPER(JS::makeSuperInfo, __VA_ARGS__))))(                       \
-    JS_INTERNAL_MAP_APPLY_SUPER(JS::makeSuperInfo, __VA_ARGS__))
-
+  JS_INTERNAL_EXPAND(JS_INTERNAL_EVAL(JS_INTERNAL_MAP_SUPER(JS::makeSuperInfo, __VA_ARGS__)))
 #define JS_SUPER(...) JS::makeTuple(JS_INTERNAL_EXPAND(JS_INTERNAL_MAKE_SUPER_CLASSES(__VA_ARGS__)))
 
 #define JS_OBJECT_INTERNAL_IMPL(super_list, member_list)                                                               \
@@ -2935,6 +2793,18 @@ struct MI
 
 namespace Internal
 {
+template <size_t SIZE>
+struct StringLiteral
+{
+  const char *data;
+  static constexpr const size_t size = SIZE;
+};
+template <size_t SIZE>
+constexpr StringLiteral<SIZE - 1> makeStringLiteral(const char (&literal)[SIZE])
+{
+  return {literal};
+}
+
 template <typename T, typename U, typename NAMETUPLE>
 using MemberInfo = MI<T, U, NAMETUPLE>;
 
@@ -2955,7 +2825,7 @@ struct SuperInfo
 } // namespace Internal
 
 template <typename T, typename U, size_t NAME_SIZE, typename... Aliases>
-constexpr auto makeMemberInfo(const char (&name)[NAME_SIZE], T U::*member, Aliases &...aliases)
+constexpr auto makeMemberInfo(const char (&name)[NAME_SIZE], T U::*member, Aliases &... aliases)
   -> MI<T, U, decltype(makeTuple(JS::Internal::makeStringLiteral(name), JS::Internal::makeStringLiteral(aliases)...))>
 {
   return {makeTuple(JS::Internal::makeStringLiteral(name), JS::Internal::makeStringLiteral(aliases)...), member};
@@ -2967,7 +2837,7 @@ constexpr const Internal::SuperInfo<T> makeSuperInfo(const char (&name)[NAME_SIZ
   return Internal::SuperInfo<T>(DataRef(name));
 }
 
-template <typename T, typename Enable = void>
+template <typename T>
 struct TypeHandler
 {
   static inline Error to(T &to_type, ParseContext &context);
@@ -3196,7 +3066,7 @@ struct MemberChecker<T, Members, PAGE, 0>
     using Super = decltype(Internal::template JsonStructBaseDummy<T, T>::js_static_meta_super_info());
     Error superError = StartSuperRecursion<T, PAGE + Members::size, Super::size>::verifyMembers(
       assigned_members, track_missing_members, missing_members);
-    if (memberError != Error::NoError)//-V1051 memberError is correct, but we have to allways call supers verifyMembers first
+    if (memberError != Error::NoError)
       return memberError;
     return superError;
   }
@@ -3308,7 +3178,6 @@ struct SuperClassHandler<T, PAGE, 0>
 static bool skipArrayOrObject(ParseContext &context)
 {
   assert(context.error == Error::NoError);
-  Type start_type = context.token.value_type;
   Type end_type;
   if (context.token.value_type == Type::ObjectStart)
   {
@@ -3323,30 +3192,26 @@ static bool skipArrayOrObject(ParseContext &context)
     return false;
   }
 
-  int depth = 1;
-  while (depth > 0)
+  while ((context.error == Error::NoError && context.token.value_type != end_type))
   {
     context.nextToken();
     if (context.error != Error::NoError)
-    {
       return false;
-    }
-    if (context.token.value_type == start_type)
+    if (context.token.value_type == Type::ObjectStart || context.token.value_type == Type::ArrayStart)
     {
-      depth++;
-    }
-    else if (context.token.value_type == end_type)
-    {
-      depth--;
+      if (skipArrayOrObject(context))
+        context.nextToken();
+      if (context.error != Error::NoError)
+        return false;
     }
   }
 
-  return context.token.value_type == end_type && context.error == Error::NoError;
+  return true;
 }
 } // namespace Internal
 
 template <typename T>
-JS_NODISCARD inline Error ParseContext::parseTo(T &to_type)
+inline Error ParseContext::parseTo(T &to_type)
 {
   missing_members.reserve(10);
   unassigned_required_members.reserve(10);
@@ -3354,10 +3219,6 @@ JS_NODISCARD inline Error ParseContext::parseTo(T &to_type)
   if (error != JS::Error::NoError)
     return error;
   error = TypeHandler<T>::to(to_type, *this);
-  if (error != JS::Error::NoError && tokenizer.errorContext().error == JS::Error::NoError)
-  {
-    tokenizer.updateErrorContext(error);
-  }
   return error;
 }
 
@@ -3365,18 +3226,18 @@ struct SerializerContext
 {
   SerializerContext(std::string &json_out_p)
     : serializer()
+    , cb_ref(serializer.addRequestBufferCallback([this](Serializer &serializer_p) {
+      size_t end = this->json_out.size();
+      this->json_out.resize(end * 2);
+      serializer_p.appendBuffer(&(this->json_out[0]) + end, end);
+      this->last_pos = end;
+    }))
     , json_out(json_out_p)
     , last_pos(0)
   {
     if (json_out.empty())
       json_out.resize(4096);
-    serializer.setBuffer(&json_out[0], json_out.size());
-    serializer.setRequestBufferCallback([this](Serializer &serializer_p) {
-      size_t end = this->json_out.size();
-      this->json_out.resize(end * 2);
-      serializer_p.setBuffer(&(this->json_out[0]) + end, end);
-      this->last_pos = end;
-    });
+    serializer.appendBuffer(&json_out[0], json_out.size());
   }
 
   ~SerializerContext()
@@ -3394,16 +3255,20 @@ struct SerializerContext
 
   void flush()
   {
-    json_out.resize(last_pos + serializer.currentBuffer().used);
+    if (serializer.buffers().empty() || !serializer.buffers().back().used)
+      return;
+    json_out.resize(last_pos + serializer.buffers().back().used);
+    serializer.clearBuffers();
   }
 
   Serializer serializer;
+  BufferRequestCBRef cb_ref;
   std::string &json_out;
   size_t last_pos;
 };
 
 template <typename T>
-JS_NODISCARD std::string serializeStruct(const T &from_type)
+std::string serializeStruct(const T &from_type)
 {
   std::string ret_string;
   SerializerContext serializeContext(ret_string);
@@ -3414,7 +3279,7 @@ JS_NODISCARD std::string serializeStruct(const T &from_type)
 }
 
 template <typename T>
-JS_NODISCARD std::string serializeStruct(const T &from_type, const SerializerOptions &options)
+std::string serializeStruct(const T &from_type, const SerializerOptions &options)
 {
   std::string ret_string;
   SerializerContext serializeContext(ret_string);
@@ -3423,6 +3288,59 @@ JS_NODISCARD std::string serializeStruct(const T &from_type, const SerializerOpt
   TypeHandler<T>::from(from_type, token, serializeContext.serializer);
   serializeContext.flush();
   return ret_string;
+}
+
+
+template <typename TBuffer>
+struct TSerializerContext {
+    TSerializerContext(TBuffer &buffer) :
+            serializer(),
+            cb_ref(serializer.addRequestBufferCallback([this](Serializer &serializer_p) {
+                size_t end = this->buffer.size();
+                this->buffer.resize(end * 2);
+                serializer_p.appendBuffer(&(this->buffer.get(0)) + end, end);
+                this->last_pos = end;
+            })), buffer(buffer), last_pos(0) {
+
+        if (buffer.empty())
+            buffer.resize(4096);
+        serializer.appendBuffer(&buffer.get(0), buffer.size());
+    }
+
+    ~TSerializerContext() {
+        flush();
+    }
+
+    template<typename T>
+    void serialize(const T &type) {
+        JS::Token token;
+        JS::TypeHandler<T>::from(type, token, serializer);
+        flush();
+    }
+
+    void flush() {
+        if (serializer.buffers().empty() || !serializer.buffers().back().used)
+            return;
+        buffer.resize(last_pos + serializer.buffers().back().used);
+        serializer.clearBuffers();
+    }
+
+    Serializer serializer;
+    JS::BufferRequestCBRef cb_ref;
+    TBuffer& buffer;
+    size_t last_pos;
+};
+
+template<typename T, typename TBuffer>
+void serializeStruct(const T &from_type, const JS::SerializerOptions &options, TBuffer& buffer) {
+
+
+    TSerializerContext serializeContext(buffer);
+    serializeContext.serializer.setOptions(options);
+    Token token;
+
+    JS::TypeHandler<T>::from(from_type, token, serializeContext.serializer);
+    serializeContext.flush();
 }
 
 template <>
@@ -3708,37 +3626,32 @@ struct JsonStructFunctionContainerDummy
 #define JS_FUNCTION_WITH_NAME_ALIASES(member, name, ...)                                                               \
   JS::makeFunctionInfo(name, &JS_CONTAINER_STRUCT_T::member, __VA_ARGS__)
 
-#define JS_INTERNAL_MAP_APPLY_FUNCTION(m, first) m(#first, &JS_CONTAINER_STRUCT_T::first)
-
 #define JS_INTERNAL_MAP_FUNCTION(m, first, ...)                                                                        \
-  JS_INTERNAL_MAP_APPLY_FUNCTION(m, first)                                                                             \
-  JS_INTERNAL_IF_ELSE(JS_INTERNAL_HAS_MORE_THAN_ONE_ARGS(__VA_ARGS__))                                                 \
-  (, JS_INTERNAL_DEFER2(JS_INTERNAL__MAP_FUNCTION)()(m, __VA_ARGS__))(, JS_INTERNAL_MAP_APPLY_FUNCTION(m, __VA_ARGS__))
-
+  m(#first, &JS_CONTAINER_STRUCT_T::first) JS_INTERNAL_IF_ELSE(JS_INTERNAL_HAS_ARGS(__VA_ARGS__))(                     \
+    , JS_INTERNAL_DEFER2(JS_INTERNAL__MAP_FUNCTION)()(m, __VA_ARGS__))(/* Do nothing, just terminate */                \
+  )
 #define JS_INTERNAL__MAP_FUNCTION() JS_INTERNAL_MAP_FUNCTION
 
 #define JS_INTERNAL_MAKE_FUNCTIONS(...)                                                                                \
-  JS_INTERNAL_IF_ELSE(JS_INTERNAL_HAS_MORE_THAN_ONE_ARGS(__VA_ARGS__))                                                 \
-  (JS_INTERNAL_EXPAND(JS_INTERNAL_EVAL(JS_INTERNAL_MAP_FUNCTION(JS::makeFunctionInfo, __VA_ARGS__))))(                 \
-    JS_INTERNAL_MAP_APPLY_FUNCTION(JS::makeFunctionInfo, __VA_ARGS__))
+  JS_INTERNAL_EXPAND(JS_INTERNAL_EVAL(JS_INTERNAL_MAP_FUNCTION(JS::makeFunctionInfo, __VA_ARGS__)))
 
-#define JS_FUNCTION_CONTAINER_INTERNAL_IMPL(super_list, function_list)                                                 \
+#define JS_FUNCTION_CONTAINER_INTERNAL_IMPL(super_list, function_list)                                                   \
   template <typename JS_CONTAINER_STRUCT_T>                                                                            \
   struct JsonStructFunctionContainer                                                                                   \
   {                                                                                                                    \
-    using TT = decltype(function_list);                                                                                \
+    using TT = decltype(function_list);                                                                   \
     static const TT &js_static_meta_functions_info()                                                                   \
     {                                                                                                                  \
-      static auto ret = function_list;                                                                                 \
+      static auto ret = function_list;                                                                    \
       return ret;                                                                                                      \
     }                                                                                                                  \
-    static const decltype(super_list) js_static_meta_super_info()                                                      \
+    static const decltype(super_list) js_static_meta_super_info()                                                 \
     {                                                                                                                  \
-      return super_list;                                                                                               \
+      return super_list;                                                                                          \
     }                                                                                                                  \
   }
 
-#define JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, super_list, function_list)                                  \
+#define JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, super_list, function_list) \
   namespace JS                                                                                                         \
   {                                                                                                                    \
   namespace Internal                                                                                                   \
@@ -3746,47 +3659,29 @@ struct JsonStructFunctionContainerDummy
   template <typename JS_CONTAINER_STRUCT_T>                                                                            \
   struct JsonStructFunctionContainerDummy<Type, JS_CONTAINER_STRUCT_T>                                                 \
   {                                                                                                                    \
-    using TT = decltype(function_list);                                                                                \
+    using TT = decltype(function_list);                                                                   \
     static const TT &js_static_meta_functions_info()                                                                   \
     {                                                                                                                  \
-      static auto ret = function_list;                                                                                 \
+      static auto ret = function_list;                                                                    \
       return ret;                                                                                                      \
     }                                                                                                                  \
-    static const decltype(super_list) js_static_meta_super_info()                                                      \
+    static const decltype(super_list) js_static_meta_super_info()                                                 \
     {                                                                                                                  \
-      return super_list;                                                                                               \
+      return super_list;                                                                                          \
     }                                                                                                                  \
   };                                                                                                                   \
   }                                                                                                                    \
   }
 
-#define JS_FUNC_OBJ(...)                                                                                               \
-  JS_FUNCTION_CONTAINER_INTERNAL_IMPL(JS::makeTuple(), JS::makeTuple(JS_INTERNAL_MAKE_FUNCTIONS(__VA_ARGS__)))
-#define JS_FUNCTION_CONTAINER(...) JS_FUNCTION_CONTAINER_INTERNAL_IMPL(JS::makeTuple(), JS::makeTuple(__VA_ARGS__))
-#define JS_FUNC_OBJ_SUPER(super_list, ...)                                                                             \
-  JS_FUNCTION_CONTAINER_INTERNAL_IMPL(super_list, JS::makeTuple(JS_INTERNAL_MAKE_FUNCTIONS(__VA_ARGS__)))
-#define JS_FUNCTION_CONTAINER_WITH_SUPER(super_list, ...)                                                              \
-  JS_FUNCTION_CONTAINER_INTERNAL_IMPL(super_list, JS::makeTuple(__VA_ARGS__))
-#define JS_FUNCTION_CONTAINER_WITH_SUPER_WITHOUT_MEMBERS(super_list)                                                   \
-  JS_FUNCTION_CONTAINER_INTERNAL_IMPL(super_list, JS::makeTuple())
+#define JS_FUNC_OBJ(...) JS_FUNCTION_CONTAINER_INTERNAL_IMPL(JS::makeTuple(), JS::makeTuple(JS_INTERNAL_MAKE_FUNCTIONS(__VA_ARGS__)))
+#define JS_FUNCTION_CONTAINER(...) JS_FUNCTION_CONTAINER_INTERNAL_IMPL(JS::makeTuple(), JS::makeTuple(__VA_ARGS__)) 
+#define JS_FUNC_OBJ_SUPER(super_list, ...)  JS_FUNCTION_CONTAINER_INTERNAL_IMPL(super_list, JS::makeTuple(JS_INTERNAL_MAKE_FUNCTIONS(__VA_ARGS__)))
+#define JS_FUNCTION_CONTAINER_WITH_SUPER(super_list, ...) JS_FUNCTION_CONTAINER_INTERNAL_IMPL(super_list, JS::makeTuple(__VA_ARGS__))
 
-#define JS_FUNC_OBJ_EXTERNAL(Type, ...)                                                                                \
-  JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, JS::makeTuple(),                                                  \
-                                               JS::makeTuple(JS_INTERNAL_MAKE_FUNCTIONS(__VA_ARGS__)))
-#define JS_FUNCTION_CONTAINER_EXTERNAL(Type, ...)                                                                      \
-  JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, JS::makeTuple(), JS::makeTuple(__VA_ARGS__))
-#define JS_FUNC_OBJ_EXTERNAL_SUPER(Type, super_list, ...)                                                              \
-  JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, super_list, JS::makeTuple(JS_INTERNAL_MAKE_FUNCTIONS(__VA_ARGS__)))
-#define JS_FUNCTION_CONTAINER_EXTERNAL_WITH_SUPER(Type, super_list, ...)                                               \
-  JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, super_list, JS::makeTuple(__VA_ARGS__))
-
-#define JS_FUNCTION_CONTAINER_EXTERNAL_WITH_SUPER_WITHOUT_MEMBERS(Type, super_list)                                    \
-  JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, super_list, JS::makeTuple())
-
-#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ == 11
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#endif
+#define JS_FUNC_OBJ_EXTERNAL(Type, ...) JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, JS::makeTuple(), JS::makeTuple(JS_INTERNAL_MAKE_FUNCTIONS(__VA_ARGS__)))
+#define JS_FUNCTION_CONTAINER_EXTERNAL(Type, ...) JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, JS::makeTuple(), JS::makeTuple(__VA_ARGS__))
+#define JS_FUNC_OBJ_EXTERNAL_SUPER(Type, super_list, ...) JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, super_list, JS::makeTuple(JS_INTERNAL_MAKE_FUNCTIONS(__VA_ARGS__)))
+#define JS_FUNCTION_CONTAINER_EXTERNAL_WITH_SUPER(Type, super_list, ...) JS_FUNCTION_CONTAINER_EXTERNAL_INTERNAL_IMPL(Type, super_list, JS::makeTuple(__VA_ARGS__))
 
 namespace Internal
 {
@@ -3914,7 +3809,7 @@ static inline void checkValidVoidParameter(CallFunctionContext &context)
       context.parse_context.token.value_type != Type::ObjectStart &&
       context.parse_context.token.value_type != Type::Bool)
   {
-    // what to do
+    //what to do
     fprintf(stderr, "Passing data arguments to a void function\n");
   }
   skipArrayOrObject(context.parse_context);
@@ -4018,11 +3913,6 @@ struct FunctionCaller<T, U, void, void, NAME_COUNT, 2>
   }
 };
 } // namespace Internal
-
-#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ == 11
-#pragma GCC diagnostic pop
-#endif
-
 template <typename T, typename U, typename Ret, typename Arg, size_t NAME_COUNT, size_t TAKES_CONTEXT>
 Error matchAndCallFunction(T &container, CallFunctionContext &context,
                            FunctionInfo<U, Ret, Arg, NAME_COUNT, TAKES_CONTEXT> &functionInfo, bool primary)
@@ -4232,13 +4122,13 @@ inline Error CallFunctionContext::callFunctions(T &container)
 struct DefaultCallFunctionContext : public CallFunctionContext
 {
   DefaultCallFunctionContext(std::string &json_out)
-    : CallFunctionContext(p_context, s_context.serializer)//-V1050 The super class only store the reference so we don't mind its not initialized
+    : CallFunctionContext(p_context, s_context.serializer)
     , s_context(json_out)
   {
   }
 
   DefaultCallFunctionContext(const char *data, size_t size, std::string &json_out)
-    : CallFunctionContext(p_context, s_context.serializer)//-V1050 The super class only store the reference so we don't mind its not initialized
+    : CallFunctionContext(p_context, s_context.serializer)
     , p_context(data, size)
     , s_context(json_out)
   {
@@ -4391,56 +4281,10 @@ void populateEnumNames(std::vector<DataRef> &names, const char (&data)[N])
   };                                                                                                                   \
   }
 
-#define JS_ENUM_DECLARE_VALUE_PARSER(name)                                                                             \
-  namespace JS                                                                                                         \
-  {                                                                                                                    \
-  template <>                                                                                                          \
-  struct TypeHandler<name>                                                                                             \
-  {                                                                                                                    \
-    typedef std::underlying_type<name>::type utype;                                                                    \
-    static inline Error to(name &to_type, ParseContext &context)                                                       \
-    {                                                                                                                  \
-      utype to_value;                                                                                                  \
-      JS::Error result = TypeHandler<utype>::to(to_value, context);                                                    \
-      if (result == JS::Error::NoError)                                                                                \
-        to_type = static_cast<name>(to_value);                                                                         \
-      return result;                                                                                                   \
-    }                                                                                                                  \
-    static inline void from(const name &from_type, Token &token, Serializer &serializer)                               \
-    {                                                                                                                  \
-        const utype from_value = static_cast<utype>(from_type);                                                        \
-        TypeHandler<utype>::from(from_value, token, serializer);                                                       \
-    }                                                                                                                  \
-  };                                                                                                                   \
-  }
-
-#define JS_ENUM_NAMESPACE_DECLARE_VALUE_PARSER(ns, name)                                                               \
-  namespace JS                                                                                                         \
-  {                                                                                                                    \
-  template <>                                                                                                          \
-  struct TypeHandler<ns::name>                                                                                         \
-  {                                                                                                                    \
-    typedef std::underlying_type<ns::name>::type utype;                                                                \
-    static inline Error to(ns::name &to_type, ParseContext &context)                                                   \
-    {                                                                                                                  \
-      utype to_value;                                                                                                  \
-      JS::Error result = TypeHandler<utype>::to(to_value, context);                                                    \
-      if (result == JS::Error::NoError)                                                                                \
-        to_type = static_cast<ns::name>(to_value);                                                                     \
-      return result;                                                                                                   \
-    }                                                                                                                  \
-    static inline void from(const ns::name &from_type, Token &token, Serializer &serializer)                           \
-    {                                                                                                                  \
-        const utype from_value = static_cast<utype>(from_type);                                                        \
-        TypeHandler<utype>::from(from_value, token, serializer);                                                       \
-    }                                                                                                                  \
-  };                                                                                                                   \
-  }
-
 namespace JS
 {
-template <typename T, typename Enable>
-inline Error TypeHandler<T, Enable>::to(T &to_type, ParseContext &context)
+template <typename T>
+inline Error TypeHandler<T>::to(T &to_type, ParseContext &context)
 {
   if (context.token.value_type != JS::Type::ObjectStart)
     return Error::ExpectedObjectStart;
@@ -4493,14 +4337,14 @@ inline Error TypeHandler<T, Enable>::to(T &to_type, ParseContext &context)
       context.unassigned_required_members.insert(context.unassigned_required_members.end(),
                                                  unassigned_required_members.begin(),
                                                  unassigned_required_members.end());
-    if (context.allow_unasigned_required_members)
+    if (context.allow_unnasigned_required_members)
       error = Error::NoError;
   }
   return error;
 }
 
-template <typename T, typename Enable>
-void TypeHandler<T, Enable>::from(const T &from_type, Token &token, Serializer &serializer)
+template <typename T>
+void TypeHandler<T>::from(const T &from_type, Token &token, Serializer &serializer)
 {
   static const char objectStart[] = "{";
   static const char objectEnd[] = "}";
@@ -4509,8 +4353,11 @@ void TypeHandler<T, Enable>::from(const T &from_type, Token &token, Serializer &
   serializer.write(token);
   auto members = Internal::JsonStructBaseDummy<T, T>::js_static_meta_data_info();
   using MembersType = decltype(members);
+
+
   Internal::MemberChecker<T, MembersType, 0, MembersType::size - 1>::serializeMembers(from_type, members, token,
                                                                                       serializer, "");
+
   token.name.size = 0;
   token.name.data = "";
   token.name_type = Type::String;
@@ -4606,7 +4453,7 @@ static void handle_json_escapes_in(const DataRef &ref, std::string &to_type)
     }
     size -= 2;
     const char current_char = *(next_it + 1);
-    // we assume utf-8 encoding when this notation is used and parsing into std::string
+    //we assume utf-8 encoding when this notation is used and parsing into std::string
     if (current_char == 'u') // hexadecimal escaped unicode character
     {
       // first convert hex ascii digits to values between 0 and 15, then create
@@ -4753,7 +4600,6 @@ namespace Internal
 // This code is taken from https://github.com/jorgen/float_tools
 namespace ft
 {
-template <typename T>
 struct float_base10
 {
   uint8_t negative;
@@ -4761,11 +4607,10 @@ struct float_base10
   uint8_t nan;
   uint8_t significand_digit_count;
   int exp;
-  T significand;
+  uint64_t significand;
 };
 
-template <typename T>
-struct parsed_string : float_base10<T>
+struct parsed_string : float_base10
 {
   const char *endptr;
 };
@@ -4810,7 +4655,10 @@ inline void left_shift(uint64_t (&a)[2], int shift)
   if (shift > int(sizeof(*a)) * 8)
   {
     auto shift_0 = (int(sizeof(uint64_t) * 8) - shift);
-    a[1] = a[0] << -shift_0;
+    if (shift_0 > 0)
+      a[1] = a[0] >> shift_0;
+    else
+      a[1] = a[0] << -shift_0;
 
     a[0] = 0;
   }
@@ -5034,8 +4882,7 @@ inline void get_parts(T f, bool &negative, int &exp, uint64_t &mentissa)
   negative = bits >> ((sizeof(f) * 8) - 1);
 }
 
-template <typename T>
-inline void assign_significand_to_float_conversion_type(const float_base10<T> &significand, uint64_t (&a)[2])
+inline void assign_significand_to_float_conversion_type(const float_base10 &significand, uint64_t (&a)[2])
 {
   a[0] = significand.significand;
   a[1] = 0;
@@ -5238,8 +5085,7 @@ I find_if(I first, I last, P p)
   return last;
 }
 
-template <typename T>
-inline void assign_significand_to_float_conversion_type(const float_base10<T> &significand, uint64_t &a)
+inline void assign_significand_to_float_conversion_type(const float_base10 &significand, uint64_t &a)
 {
   a = significand.significand;
 }
@@ -6129,10 +5975,6 @@ inline void compute_shortest(uint64_t a, uint64_t b, uint64_t c, bool accept_sma
 template <typename T>
 inline uint64_t multiply_and_shift(uint64_t a, const uint64_t *b, int shift_right, bool round_up)
 {
-  (void)a;
-  (void)b;
-  (void)shift_right;
-  (void)round_up;
   return 0;
 }
 template <>
@@ -6255,8 +6097,8 @@ inline uint64_t pow_int(int n, int exp)
   return ret;
 }
 
-template <typename T, typename SignificandType>
-static float_base10<SignificandType> decode(T f)
+template <typename T>
+static float_base10 decode(T f)
 {
   bool negative;
   int exp;
@@ -6353,9 +6195,8 @@ static float_base10<SignificandType> decode(T f)
   return {negative, false, false, uint8_t(significand_digit_count), e, shortest_base10};
 }
 
-template <typename T>
-inline int convert_parsed_to_buffer(const float_base10<T> &result, char *buffer, int buffer_size,
-                                    int max_expanded_length, int *digits_truncated = nullptr)
+inline int convert_parsed_to_buffer(const float_base10 &result, char *buffer, int buffer_size, int max_expanded_length,
+                                    int *digits_truncated = nullptr)
 {
   if (buffer_size < 1)
     return 0;
@@ -6531,10 +6372,9 @@ inline int convert_parsed_to_buffer(const float_base10<T> &result, char *buffer,
 
 } // namespace ryu
 
-template <typename T>
 struct set_end_ptr
 {
-  set_end_ptr(parsed_string<T> &parsedString, const char *&current)
+  set_end_ptr(parsed_string &parsedString, const char *&current)
     : parsedString(parsedString)
     , current(current)
   {
@@ -6543,7 +6383,7 @@ struct set_end_ptr
   {
     parsedString.endptr = current;
   }
-  parsed_string<T> &parsedString;
+  parsed_string &parsedString;
   const char *&current;
 };
 
@@ -6554,15 +6394,14 @@ inline bool is_space(char a)
   return false;
 }
 
-template <typename T, bool NoDigitCount>
-inline parse_string_error parseNumber(const char *number, size_t size, parsed_string<T> &parsedString)
+inline parse_string_error parseNumber(const char *number, size_t size, parsed_string &parsedString)
 {
   const char *current;
-  set_end_ptr<T> setendptr(parsedString, current);
+  set_end_ptr setendptr(parsedString, current);
   int desimal_position = -1;
   bool increase_significand = true;
 
-  parsedString.negative = 0;
+  parsedString.negative = false;
   parsedString.inf = 0;
   parsedString.nan = 0;
   parsedString.significand_digit_count = 0;
@@ -6577,7 +6416,7 @@ inline parse_string_error parseNumber(const char *number, size_t size, parsed_st
   }
   if (*current == '-')
   {
-    parsedString.negative = 1;
+    parsedString.negative = true;
     current++;
   }
   while (current < number_end)
@@ -6593,27 +6432,20 @@ inline parse_string_error parseNumber(const char *number, size_t size, parsed_st
     }
     else
     {
-#ifdef _MSC_VER
-      bool localDigitCount = NoDigitCount;
-      if (localDigitCount || parsedString.significand_digit_count < 19)
-#else
-      if (NoDigitCount || parsedString.significand_digit_count < 19)
-#endif
+      if (parsedString.significand_digit_count < 19)
       {
-        parsedString.significand = parsedString.significand * T(10) + T(int(*current) - '0');
+        parsedString.significand = parsedString.significand * uint64_t(10) + (uint64_t(*current) - '0');
         parsedString.significand_digit_count++;
       }
       else if (increase_significand && parsedString.significand_digit_count < 20)
       {
         increase_significand = false;
         uint64_t digit = uint64_t(*current) - '0';
-        static_assert(NoDigitCount || std::is_same<T, uint64_t>::value,
-                      "When NoDigitCount is used the significand type has to be uint64_t");
         auto biggest_multiplier = (std::numeric_limits<uint64_t>::max() - digit) / parsedString.significand;
 
         if (biggest_multiplier >= 10)
         {
-          parsedString.significand = parsedString.significand * T(10) + T(digit);
+          parsedString.significand = parsedString.significand * uint64_t(10) + digit;
           parsedString.significand_digit_count++;
         }
       }
@@ -6624,6 +6456,8 @@ inline parse_string_error parseNumber(const char *number, size_t size, parsed_st
   {
     if (desimal_position >= 0)
       parsedString.exp = desimal_position - parsedString.significand_digit_count;
+    else
+      parsedString.exp = 0;
     return parse_string_error::ok;
   }
   current++;
@@ -6695,8 +6529,8 @@ inline uint64_t getPow10(uint32_t pow)
   return data[pow];
 }
 
-template <typename T, typename SignificandType>
-inline T convertToNumber(const parsed_string<SignificandType> &parsed)
+template <typename T>
+inline T convertToNumber(const parsed_string &parsed)
 {
   int base10exponent = parsed.exp + parsed.significand_digit_count - 1;
   if (base10exponent > float_info<T>::max_base10_exponent())
@@ -6774,7 +6608,7 @@ namespace ryu
 template <typename T>
 int to_buffer(T d, char *buffer, int buffer_size, int *digits_truncated = nullptr)
 {
-  auto decoded = decode<T, uint64_t>(d);
+  auto decoded = decode(d);
   return convert_parsed_to_buffer(decoded, buffer, buffer_size, float_info<T>::str_to_float_expanded_length(),
                                   digits_truncated);
 }
@@ -6782,7 +6616,7 @@ int to_buffer(T d, char *buffer, int buffer_size, int *digits_truncated = nullpt
 template <typename T>
 inline std::string to_string(T f)
 {
-  auto decoded = decode<T, uint64_t>(f);
+  auto decoded = decode(f);
   std::string ret;
   ret.resize(25);
   ret.resize(
@@ -6839,22 +6673,22 @@ inline int to_buffer(T integer, char *buffer, int buffer_size, int *digits_trunc
   return chars_to_write + negative;
 }
 
-template <typename T, typename SignificandType>
-inline typename std::enable_if<std::is_signed<T>::value, T>::type make_integer_return_value(SignificandType significand,
+template <typename T>
+inline typename std::enable_if<std::is_signed<T>::value, T>::type make_integer_return_value(uint64_t significand,
                                                                                             bool negative)
 {
   return negative ? -T(significand) : T(significand);
 }
 
-template <typename T, typename SignificandType>
-inline typename std::enable_if<std::is_unsigned<T>::value, T>::type make_integer_return_value(
-  SignificandType significand, bool)
+template <typename T>
+inline typename std::enable_if<std::is_unsigned<T>::value, T>::type make_integer_return_value(uint64_t significand,
+                                                                                              bool)
 {
   return T(significand);
 }
 
-template <typename T, typename SignificandType>
-inline T convert_to_integer(const parsed_string<SignificandType> &parsed)
+template <typename T>
+inline T convert_to_integer(const parsed_string &parsed)
 {
   if (parsed.inf)
     return parsed.negative ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
@@ -6862,7 +6696,7 @@ inline T convert_to_integer(const parsed_string<SignificandType> &parsed)
     return T(0);
 
   int exp = parsed.exp;
-  auto significand = parsed.significand;
+  uint64_t significand = parsed.significand;
   if (exp < 0)
   {
     int chars_in_sig = count_chars(significand);
@@ -6891,9 +6725,8 @@ inline T convert_to_integer(const parsed_string<SignificandType> &parsed)
 template <typename T>
 inline parse_string_error to_integer(const char *str, size_t size, T &target, const char *(&endptr))
 {
-  using SignificandType = typename std::make_unsigned<T>::type;
-  parsed_string<SignificandType> ps;
-  auto parseResult = parseNumber<SignificandType, true>(str, size, ps);
+  parsed_string ps;
+  auto parseResult = parseNumber(str, size, ps);
   endptr = ps.endptr;
   if (parseResult != parse_string_error::ok)
   {
@@ -6916,8 +6749,8 @@ inline parse_string_error to_integer(const std::string &str, T &target, const ch
 template <typename T>
 inline parse_string_error to_ieee_t(const char *str, size_t size, T &target, const char *(&endptr))
 {
-  parsed_string<uint64_t> ps;
-  auto parseResult = parseNumber<uint64_t, false>(str, size, ps);
+  parsed_string ps;
+  auto parseResult = parseNumber(str, size, ps);
   endptr = ps.endptr;
   if (parseResult != parse_string_error::ok)
   {
@@ -7007,10 +6840,10 @@ struct TypeHandler<float>
 };
 
 /// \private
-template <typename T>
-struct TypeHandlerIntType
+template <>
+struct TypeHandler<int>
 {
-  static inline Error to(T &to_type, ParseContext &context)
+  static inline Error to(int &to_type, ParseContext &context)
   {
     const char *pointer;
     auto parse_error =
@@ -7020,9 +6853,9 @@ struct TypeHandlerIntType
     return Error::NoError;
   }
 
-  static inline void from(const T &from_type, Token &token, Serializer &serializer)
+  static inline void from(const int &from_type, Token &token, Serializer &serializer)
   {
-    char buf[40];
+    char buf[11];
     int digits_truncated;
     int size = Internal::ft::integer::to_buffer(from_type, buf, sizeof(buf), &digits_truncated);
     if (size <= 0 || digits_truncated)
@@ -7040,65 +6873,263 @@ struct TypeHandlerIntType
 
 /// \private
 template <>
-struct TypeHandler<short int> : TypeHandlerIntType<short int>
+struct TypeHandler<uint32_t>
 {
+public:
+  static inline Error to(uint32_t &to_type, ParseContext &context)
+  {
+    const char *pointer;
+    auto parse_error =
+      Internal::ft::integer::to_integer(context.token.value.data, context.token.value.size, to_type, pointer);
+    if (parse_error != Internal::ft::parse_string_error::ok || context.token.value.data == pointer)
+      return Error::FailedToParseInt;
+    return Error::NoError;
+  }
+
+  static void from(const uint32_t &from_type, Token &token, Serializer &serializer)
+  {
+    char buf[12];
+    int digits_truncated;
+    int size = Internal::ft::integer::to_buffer(from_type, buf, sizeof(buf), &digits_truncated);
+    if (size <= 0 || digits_truncated)
+    {
+      fprintf(stderr, "error serializing int token\n");
+      return;
+    }
+
+    token.value_type = Type::Number;
+    token.value.data = buf;
+    token.value.size = size_t(size);
+    serializer.write(token);
+  }
 };
 
 /// \private
 template <>
-struct TypeHandler<unsigned short int> : TypeHandlerIntType<unsigned short int>
+struct TypeHandler<int64_t>
 {
+public:
+  static inline Error to(int64_t &to_type, ParseContext &context)
+  {
+    const char *pointer;
+    auto parse_error =
+      Internal::ft::integer::to_integer(context.token.value.data, context.token.value.size, to_type, pointer);
+    if (parse_error != Internal::ft::parse_string_error::ok || context.token.value.data == pointer)
+      return Error::FailedToParseInt;
+    return Error::NoError;
+  }
+
+  static void from(const int64_t &from_type, Token &token, Serializer &serializer)
+  {
+    char buf[24];
+    int digits_truncated;
+    int size = Internal::ft::integer::to_buffer(from_type, buf, sizeof(buf), &digits_truncated);
+    if (size <= 0 || digits_truncated)
+    {
+      fprintf(stderr, "error serializing int token\n");
+      return;
+    }
+
+    token.value_type = Type::Number;
+    token.value.data = buf;
+    token.value.size = size_t(size);
+    serializer.write(token);
+  }
 };
 
 /// \private
 template <>
-struct TypeHandler<int> : TypeHandlerIntType<int>
+struct TypeHandler<uint64_t>
 {
+public:
+  static inline Error to(uint64_t &to_type, ParseContext &context)
+  {
+    const char *pointer;
+    auto parse_error =
+      Internal::ft::integer::to_integer(context.token.value.data, context.token.value.size, to_type, pointer);
+    if (parse_error != Internal::ft::parse_string_error::ok || context.token.value.data == pointer)
+      return Error::FailedToParseInt;
+    return Error::NoError;
+  }
+
+  static inline void from(const uint64_t &from_type, Token &token, Serializer &serializer)
+  {
+    char buf[24];
+    int digits_truncated;
+    int size = Internal::ft::integer::to_buffer(from_type, buf, sizeof(buf), &digits_truncated);
+    if (size <= 0 || digits_truncated)
+    {
+      fprintf(stderr, "error serializing int token\n");
+      return;
+    }
+
+    token.value_type = Type::Number;
+    token.value.data = buf;
+    token.value.size = size_t(size);
+    serializer.write(token);
+  }
 };
 
 /// \private
 template <>
-struct TypeHandler<unsigned int> : TypeHandlerIntType<unsigned int>
+struct TypeHandler<int16_t>
 {
+public:
+  static inline Error to(int16_t &to_type, ParseContext &context)
+  {
+    const char *pointer;
+    auto parse_error =
+      Internal::ft::integer::to_integer(context.token.value.data, context.token.value.size, to_type, pointer);
+    if (parse_error != Internal::ft::parse_string_error::ok || context.token.value.data == pointer)
+      return Error::FailedToParseInt;
+    return Error::NoError;
+  }
+
+  static inline void from(const int16_t &from_type, Token &token, Serializer &serializer)
+  {
+    char buf[8];
+    int digits_truncated;
+    int size = Internal::ft::integer::to_buffer(from_type, buf, sizeof(buf), &digits_truncated);
+    if (size <= 0 || digits_truncated)
+    {
+      fprintf(stderr, "error serializing int token\n");
+      return;
+    }
+
+    token.value_type = Type::Number;
+    token.value.data = buf;
+    token.value.size = size_t(size);
+    serializer.write(token);
+  }
 };
 
 /// \private
 template <>
-struct TypeHandler<long int> : TypeHandlerIntType<long int>
+struct TypeHandler<uint16_t>
 {
+public:
+  static inline Error to(uint16_t &to_type, ParseContext &context)
+  {
+    const char *pointer;
+    auto parse_error =
+      Internal::ft::integer::to_integer(context.token.value.data, context.token.value.size, to_type, pointer);
+    if (parse_error != Internal::ft::parse_string_error::ok || context.token.value.data == pointer)
+      return Error::FailedToParseInt;
+    return Error::NoError;
+  }
+
+  static inline void from(const uint16_t &from_type, Token &token, Serializer &serializer)
+  {
+    char buf[8];
+    int digits_truncated;
+    int size = Internal::ft::integer::to_buffer(from_type, buf, sizeof(buf), &digits_truncated);
+    if (size <= 0 || digits_truncated)
+    {
+      fprintf(stderr, "error serializing int token\n");
+      return;
+    }
+
+    token.value_type = Type::Number;
+    token.value.data = buf;
+    token.value.size = size_t(size);
+    serializer.write(token);
+  }
 };
 
-/// \private
 template <>
-struct TypeHandler<unsigned long int> : TypeHandlerIntType<unsigned long int>
+struct TypeHandler<uint8_t>
 {
+public:
+  static inline Error to(uint8_t &to_type, ParseContext &context)
+  {
+    const char *pointer;
+    auto parse_error =
+      Internal::ft::integer::to_integer(context.token.value.data, context.token.value.size, to_type, pointer);
+    if (parse_error != Internal::ft::parse_string_error::ok || context.token.value.data == pointer)
+      return Error::FailedToParseInt;
+    return Error::NoError;
+  }
+
+  static inline void from(const uint8_t &from_type, Token &token, Serializer &serializer)
+  {
+    char buf[8];
+    int digits_truncated;
+    int size = Internal::ft::integer::to_buffer(from_type, buf, sizeof(buf), &digits_truncated);
+    if (size <= 0 || digits_truncated)
+    {
+      fprintf(stderr, "error serializing int token\n");
+      return;
+    }
+
+    token.value_type = Type::Number;
+    token.value.data = buf;
+    token.value.size = size_t(size);
+    serializer.write(token);
+  }
 };
 
-/// \private
 template <>
-struct TypeHandler<long long int> : TypeHandlerIntType<long long int>
+struct TypeHandler<int8_t>
 {
+public:
+  static inline Error to(int8_t &to_type, ParseContext &context)
+  {
+    const char *pointer;
+    auto parse_error =
+      Internal::ft::integer::to_integer(context.token.value.data, context.token.value.size, to_type, pointer);
+    if (parse_error != Internal::ft::parse_string_error::ok || context.token.value.data == pointer)
+      return Error::FailedToParseInt;
+    return Error::NoError;
+  }
+
+  static inline void from(const int8_t &from_type, Token &token, Serializer &serializer)
+  {
+    char buf[8];
+    int digits_truncated;
+    int size = Internal::ft::integer::to_buffer(from_type, buf, sizeof(buf), &digits_truncated);
+    if (size <= 0 || digits_truncated)
+    {
+      fprintf(stderr, "error serializing int token\n");
+      return;
+    }
+
+    token.value_type = Type::Number;
+    token.value.data = buf;
+    token.value.size = size_t(size);
+    serializer.write(token);
+  }
 };
 
-/// \private
 template <>
-struct TypeHandler<unsigned long long int> : TypeHandlerIntType<unsigned long long int>
+struct TypeHandler<char>
 {
-};
+public:
+  static inline Error to(char &to_type, ParseContext &context)
+  {
+    const char *pointer;
+    auto parse_error =
+      Internal::ft::integer::to_integer(context.token.value.data, context.token.value.size, to_type, pointer);
+    if (parse_error != Internal::ft::parse_string_error::ok || context.token.value.data == pointer)
+      return Error::FailedToParseInt;
+    return Error::NoError;
+  }
 
-template <>
-struct TypeHandler<uint8_t> : TypeHandlerIntType<uint8_t>
-{
-};
+  static inline void from(const char &from_type, Token &token, Serializer &serializer)
+  {
+    char buf[8];
+    int digits_truncated;
+    int size = Internal::ft::integer::to_buffer(from_type, buf, sizeof(buf), &digits_truncated);
+    if (size <= 0 || digits_truncated)
+    {
+      fprintf(stderr, "error serializing int token\n");
+      return;
+    }
 
-template <>
-struct TypeHandler<int8_t> : TypeHandlerIntType<int8_t>
-{
-};
-
-template <>
-struct TypeHandler<char> : TypeHandlerIntType<char>
-{
+    token.value_type = Type::Number;
+    token.value.data = buf;
+    token.value.size = size_t(size);
+    serializer.write(token);
+  }
 };
 
 /// \private
@@ -7306,63 +7337,11 @@ struct TypeHandler<bool>
   }
 };
 
-#ifdef JS_STD_TIMEPOINT
-/// \private
-namespace Internal
-{
-    template <class T, template <class...> class Template>
-    struct is_specialization : std::false_type {};
-
-    template <template <class...> class Template, class... Args>
-    struct is_specialization<Template<Args...>, Template> : std::true_type {};
-}
-
-/// \private
-template <class T>
-struct TypeHandler<T, typename std::enable_if_t<Internal::is_specialization<T, std::chrono::time_point>::value>>
-{
-    static inline Error to(T& to_type, ParseContext &context)
-    {
-        uint64_t t;
-        Error err = TypeHandler<uint64_t>::to(t, context);
-        if (err != Error::NoError)
-            return err;
-
-        if (t <= 1e11) // Seconds => 10 digits, normally
-            to_type = T{std::chrono::seconds{t}};
-        else if (t <= 1e14) // Milliseconds => 13 digits, normally
-            to_type = T{std::chrono::milliseconds{t}};
-        else if (t <= 1e17) // Microseconds
-            to_type = T{std::chrono::microseconds{t}};
-        else if (t <= 1e20) // Nanoseconds
-            if constexpr (std::is_same_v<std::chrono::high_resolution_clock::time_point, T>)
-                to_type = T{std::chrono::nanoseconds{t}};
-            else
-                return JS::Error::IllegalDataValue;
-        else
-            return JS::Error::IllegalDataValue;
-
-        return JS::Error::NoError;
-    }
-
-    static inline void from(const T& val, Token &token, Serializer &serializer)
-    {
-        uint64_t t;
-        if constexpr (std::is_same_v<std::chrono::high_resolution_clock::time_point, T>)
-        	t = std::chrono::duration_cast<std::chrono::nanoseconds>(val.time_since_epoch()).count();
-		else
-        	t = std::chrono::duration_cast<std::chrono::microseconds>(val.time_since_epoch()).count();
-		while (t % 1000 == 0 && t > (uint64_t)1e10)
-			t /= 1000;
-        TypeHandler<uint64_t>::from(t, token, serializer);
-    }
-};
-#endif
-
 /// \private
 template <typename T>
 struct TypeHandler<std::vector<T>>
 {
+public:
   static inline Error to(std::vector<T> &to_type, ParseContext &context)
   {
     if (context.token.value_type != JS::Type::ArrayStart)
@@ -7527,10 +7506,15 @@ public:
     }
     to_type.clear();
     to_type.push_back(context.token);
+    bool buffer_change = false;
+    auto ref = context.tokenizer.registerNeedMoreDataCallback([&buffer_change](JS::Tokenizer &tokenizer) {
+      JS_UNUSED(tokenizer);
+      buffer_change = true;
+    });
 
     size_t level = 1;
     Error error = Error::NoError;
-    while (error == JS::Error::NoError && level)
+    while (error == JS::Error::NoError && level && buffer_change == false)
     {
       error = context.nextToken();
       to_type.push_back(context.token);
@@ -7539,6 +7523,8 @@ public:
       else if (context.token.value_type == Type::ArrayEnd || context.token.value_type == Type::ObjectEnd)
         level--;
     }
+    if (buffer_change)
+      return Error::NonContigiousMemory;
 
     return error;
   }
@@ -7577,11 +7563,17 @@ struct TypeHandler<JsonArrayRef>
     if (context.token.value_type != JS::Type::ArrayStart)
       return Error::ExpectedArrayStart;
 
+    bool buffer_change = false;
+    auto ref = context.tokenizer.registerNeedMoreDataCallback([&buffer_change](JS::Tokenizer &tokenizer) {
+      JS_UNUSED(tokenizer);
+      buffer_change = true;
+    });
+
     to_type.ref.data = context.token.value.data;
 
     size_t level = 1;
     Error error = Error::NoError;
-    while (error == JS::Error::NoError && level)
+    while (error == JS::Error::NoError && level && buffer_change == false)
     {
       error = context.nextToken();
       if (context.token.value_type == Type::ArrayStart)
@@ -7589,6 +7581,8 @@ struct TypeHandler<JsonArrayRef>
       else if (context.token.value_type == Type::ArrayEnd)
         level--;
     }
+    if (buffer_change)
+      return Error::NonContigiousMemory;
 
     to_type.ref.size = size_t(context.token.value.data + context.token.value.size - to_type.ref.data);
 
@@ -7658,10 +7652,16 @@ struct TypeHandler<JsonObjectRef>
     if (context.token.value_type != JS::Type::ObjectStart)
       return Error::ExpectedObjectStart;
 
+    bool buffer_change = false;
+    auto ref = context.tokenizer.registerNeedMoreDataCallback([&buffer_change](JS::Tokenizer &tokenizer) {
+      JS_UNUSED(tokenizer);
+      buffer_change = true;
+    });
+
     to_type.ref.data = context.token.value.data;
     size_t level = 1;
     Error error = Error::NoError;
-    while (error == JS::Error::NoError && level)
+    while (error == JS::Error::NoError && level && buffer_change == false)
     {
       error = context.nextToken();
       if (context.token.value_type == Type::ObjectStart)
@@ -7669,6 +7669,8 @@ struct TypeHandler<JsonObjectRef>
       else if (context.token.value_type == Type::ObjectEnd)
         level--;
     }
+    if (buffer_change)
+      return Error::NonContigiousMemory;
 
     to_type.ref.size = size_t(context.token.value.data + context.token.value.size - to_type.ref.data);
     return error;
@@ -7750,10 +7752,16 @@ struct TypeHandler<JsonObjectOrArrayRef>
       return Error::ExpectedObjectStart;
     }
 
+    bool buffer_change = false;
+    auto ref = context.tokenizer.registerNeedMoreDataCallback([&buffer_change](JS::Tokenizer &tokenizer) {
+      JS_UNUSED(tokenizer);
+      buffer_change = true;
+    });
+
     to_type.ref.data = context.token.value.data;
     size_t level = 1;
     Error error = Error::NoError;
-    while (error == JS::Error::NoError && level)
+    while (error == JS::Error::NoError && level && buffer_change == false)
     {
       error = context.nextToken();
       if (context.token.value_type == openType)
@@ -7761,6 +7769,8 @@ struct TypeHandler<JsonObjectOrArrayRef>
       else if (context.token.value_type == closeType)
         level--;
     }
+    if (buffer_change)
+      return Error::NonContigiousMemory;
 
     to_type.ref.size = size_t(context.token.value.data + context.token.value.size - to_type.ref.data);
     return error;
@@ -7930,7 +7940,7 @@ struct StdTupleTypeHandler
     return StdTupleTypeHandler<INDEX - 1, Ts...>::to(to_type, context);
   }
 
-  static inline void from(const std::tuple<Ts...> &from_type, Token &token, Serializer &serializer)
+  static inline void from(const JS::Tuple<Ts...> &from_type, Token &token, Serializer &serializer)
   {
     using Type = typename std::tuple_element<sizeof...(Ts) - INDEX, std::tuple<Ts...>>::type;
     TypeHandler<Type>::from(std::get<sizeof...(Ts) - INDEX>(from_type), token, serializer);
@@ -7999,7 +8009,7 @@ struct OneOrMany
 };
 
 template <typename T>
-struct TypeHandler<OneOrMany<T>>
+class TypeHandler<OneOrMany<T>>
 {
 public:
   static inline Error to(OneOrMany<T> &to_type, ParseContext &context)
@@ -8031,7 +8041,7 @@ public:
 };
 
 template <typename T, size_t N>
-struct TypeHandler<T[N]>
+class TypeHandler<T[N]>
 {
 public:
   static inline Error to(T (&to_type)[N], ParseContext &context)
@@ -8071,11 +8081,12 @@ public:
     serializer.write(token);
   }
 };
-
-template <typename Key, typename Value, typename Map>
-struct TypeHandlerMap
+#ifdef JS_STD_UNORDERED_MAP
+template <typename Key, typename Value>
+class TypeHandler<std::unordered_map<Key, Value>>
 {
-  static inline Error to(Map &to_type, ParseContext &context)
+public:
+  static inline Error to(std::unordered_map<Key, Value> &to_type, ParseContext &context)
   {
     if (context.token.value_type != Type::ObjectStart)
     {
@@ -8087,10 +8098,10 @@ struct TypeHandlerMap
       return error;
     while (context.token.value_type != Type::ObjectEnd)
     {
-      Key key(context.token.name.data, context.token.name.size);
+      Key k(context.token.name.data, context.token.name.size);
       Value v;
       error = TypeHandler<Value>::to(v, context);
-      to_type[std::move(key)] = std::move(v);
+      to_type[k] = v;
       if (error != JS::Error::NoError)
         return error;
       error = context.nextToken();
@@ -8099,7 +8110,7 @@ struct TypeHandlerMap
     return error;
   }
 
-  static void from(const Map &from, Token &token, Serializer &serializer)
+  static void from(const std::unordered_map<Key, Value> &from, Token &token, Serializer &serializer)
   {
     token.value_type = Type::ObjectStart;
     token.value = DataRef("{");
@@ -8118,22 +8129,15 @@ struct TypeHandlerMap
     serializer.write(token);
   }
 };
-
-#ifdef JS_STD_UNORDERED_MAP
-template <typename Key, typename Value>
-struct TypeHandler<std::unordered_map<Key, Value>> : TypeHandlerMap<Key, Value, std::unordered_map<Key, Value>>
-{
-};
-
 #endif
 
 namespace Internal
 {
-inline bool compareDataRefWithString(const DataRef &a, const std::string &b)
-{
-  return a.size == b.size() && memcmp(a.data, b.data(), a.size) == 0;
+  inline bool compareDataRefWithString(const DataRef& a, const std::string& b)
+  {
+    return a.size == b.size() && memcmp(a.data, b.data(), a.size) == 0;
+  }
 }
-} // namespace Internal
 struct Map
 {
   struct It
@@ -8152,12 +8156,13 @@ struct Map
       : map(map)
     {
     }
-    It(const It &other)
+    It(const It& other)
       : map(other.map)
       , index(other.index)
       , next_meta(other.next_meta)
       , next_complex(other.next_complex)
     {
+
     }
     inline const Token &operator*()
     {
@@ -8175,8 +8180,8 @@ struct Map
       {
         index += map.meta[next_meta].size;
         next_meta += map.meta[next_meta].skip;
-        next_complex = next_meta < uint32_t(map.meta.size()) ? uint32_t(map.meta[next_meta].position)
-                                                             : uint32_t(map.tokens.data.size());
+        next_complex =
+          next_meta < uint32_t(map.meta.size()) ? uint32_t(map.meta[next_meta].position) : uint32_t(map.tokens.data.size());
       }
       else
       {
@@ -8211,8 +8216,7 @@ struct Map
     It b(*this);
     b.index = 1;
     b.next_meta = 1;
-    b.next_complex =
-      b.next_meta < uint32_t(meta.size()) ? uint32_t(meta[b.next_meta].position) : uint32_t(tokens.data.size());
+    b.next_complex = b.next_meta < uint32_t(meta.size()) ? uint32_t(meta[b.next_meta].position) : uint32_t(tokens.data.size());
     return b;
   }
 
@@ -8267,7 +8271,7 @@ struct Map
   template <typename T>
   T castTo(JS::ParseContext &parseContext) const
   {
-    T t = {};
+    T t;
     castToType<T>(parseContext, t);
     return t;
   }
@@ -8275,13 +8279,13 @@ struct Map
   template <typename T>
   T castTo(const std::string &name, JS::ParseContext &parseContext) const
   {
-    T t = {};
+    T t;
     castToType<T>(name, parseContext, t);
     return t;
   }
 
-  template <typename T>
-  JS::Error setValue(JS::ParseContext &parseContext, const T &value)
+  template<typename T>
+  JS::Error setValue(JS::ParseContext &parseContext, const T& value)
   {
     static_assert(sizeof(JS::Internal::HasJsonStructBase<T>::template test_in_base<T>(nullptr)) ==
                     sizeof(typename JS::Internal::HasJsonStructBase<T>::yes),
@@ -8291,8 +8295,8 @@ struct Map
     tokens.data.clear();
     meta.clear();
     json_data.clear();
-    auto error = parseContext.parseTo(tokens);
-    if (error == JS::Error::NoError)
+    parseContext.parseTo(tokens);
+    if (parseContext.error == JS::Error::NoError)
       assert(tokens.data.size() && tokens.data[0].value_type == JS::Type::ObjectStart);
 
     meta = metaForTokens(tokens);
@@ -8300,10 +8304,9 @@ struct Map
     return parseContext.error;
   }
 
-  template <typename T>
-  JS::Error setValue(const std::string &name, JS::ParseContext &parseContext, const T &value)
+  template<typename T>
+  JS::Error setValue(const std::string& name, JS::ParseContext &parseContext, const T& value)
   {
-    (void)parseContext;
     if (tokens.data.empty())
     {
       tokens.data.reserve(10);
@@ -8335,7 +8338,7 @@ struct Map
         int to_adjust_index = it.next_meta;
         auto start_meta = meta.begin() + it.next_meta;
         meta.erase(start_meta, start_meta + theMeta.skip);
-        for (int i = to_adjust_index; i < int(meta.size()); i++)
+        for (int i = to_adjust_index; i < meta.size(); i++)
         {
           meta[i].position -= theMeta.size;
         }
@@ -8348,11 +8351,11 @@ struct Map
       }
       {
         int index_to_remove = -1;
-        for (int i = 0; i < int(json_data.size()); i++)
+        for (int i = 0; i < json_data.size(); i++)
         {
-          if (uint32_t(json_data[i].first) == it.index)
+          if (json_data[i].first == it.index)
             index_to_remove = i;
-          else if (uint32_t(json_data[i].first) > it.index)
+          else if (json_data[i].first > it.index)
             json_data[i].first -= tokens_removed;
         }
         if (index_to_remove >= 0)
@@ -8385,8 +8388,8 @@ struct Map
     JS::ParseContext pc(out.c_str(), out.size(), new_tokens);
     auto new_meta = metaForTokens(new_tokens);
 
-    json_data.emplace_back(int(tokens.data.size() - 1), std::move(out));
-    int old_tokens_size = int(tokens.data.size());
+    json_data.emplace_back(tokens.data.size() - 1, std::move(out));
+    int old_tokens_size = tokens.data.size();
     tokens.data.insert(tokens.data.end() - 1, new_tokens.data.begin() + 1, new_tokens.data.end() - 1);
     meta[0].children++;
     if (new_meta[0].complex_children)
@@ -8394,12 +8397,11 @@ struct Map
       meta[0].complex_children++;
       meta[0].size += new_meta[1].size;
       meta[0].skip += new_meta[1].skip;
-      int old_meta_size = int(meta.size());
+      int old_meta_size = meta.size();
       meta.insert(meta.end(), new_meta.begin() + 1, new_meta.end());
-      for (int new_meta_i = old_meta_size; new_meta_i < int(meta.size()); new_meta_i++)
+      for (int new_meta_i = old_meta_size; new_meta_i < meta.size(); new_meta_i++)
       {
-        meta[new_meta_i].position +=
-          old_tokens_size - 1 - 1; // position contains an extra and old_tokens_size has another extra
+        meta[new_meta_i].position += old_tokens_size - 1 - 1; //position contains an extra and old_tokens_size has another extra
       }
     }
     else
@@ -8427,21 +8429,21 @@ struct TypeHandler<Map>
 
   static inline void from(const Map &from_type, Token &, Serializer &serializer)
   {
-    for (auto &token : from_type.tokens.data)
+    for (auto& token : from_type.tokens.data)
     {
       serializer.write(token);
     }
   }
 };
 
-template <typename T, size_t COUNT>
-struct ArrayVariableContent//-V730
+template<typename T, size_t COUNT>
+struct ArrayVariableContent
 {
   T data[COUNT];
   size_t size = 0;
 };
 
-template <typename T, size_t COUNT>
+template<typename T, size_t COUNT>
 struct TypeHandler<ArrayVariableContent<T, COUNT>>
 {
   static inline Error to(ArrayVariableContent<T, COUNT> &to_type, ParseContext &context)
@@ -8487,167 +8489,5 @@ struct TypeHandler<ArrayVariableContent<T, COUNT>>
     serializer.write(token);
   }
 };
-
-template <typename T, typename Set>
-struct TypeHandlerSet
-{
-  static inline Error to(Set &to_type, ParseContext &context)
-  {
-    if (context.token.value_type != JS::Type::ArrayStart)
-      return Error::ExpectedArrayStart;
-    Error error = context.nextToken();
-    if (error != JS::Error::NoError)
-      return error;
-    to_type.clear();
-    while (context.token.value_type != JS::Type::ArrayEnd)
-    {
-      T t;
-      error = TypeHandler<T>::to(t, context);
-      if (error != JS::Error::NoError)
-        break;
-      auto insert_ret = to_type.insert(std::move(t));
-      if (!insert_ret.second)
-        return JS::Error::DuplicateInSet;
-
-      error = context.nextToken();
-      if (error != JS::Error::NoError)
-        break;
-    }
-
-    return error;
-  }
-
-  static inline void from(const Set &set, Token &token, Serializer &serializer)
-  {
-    token.value_type = Type::ArrayStart;
-    token.value = DataRef("[");
-    serializer.write(token);
-
-    token.name = DataRef("");
-
-    for (auto &index : set)
-    {
-      TypeHandler<T>::from(index, token, serializer);
-    }
-
-    token.name = DataRef("");
-
-    token.value_type = Type::ArrayEnd;
-    token.value = DataRef("]");
-    serializer.write(token);
-  }
-};
 } // namespace JS
 #endif // JSON_STRUCT_H
-
-#if defined(JS_STL_MAP) && !defined(JS_STL_MAP_INCLUDE)
-#define JS_STL_MAP_INCLUDE
-#include <map>
-namespace JS
-{
-template <typename Key, typename Value>
-struct TypeHandler<std::map<Key, Value>> : TypeHandlerMap<Key, Value, std::map<Key, Value>>
-{
-};
-} // namespace JS
-#endif
-
-#if defined(JS_STL_SET) && !defined(JS_STL_SET_INCLUDE)
-#define JS_STL_SET_INCLUDE
-#include <set>
-namespace JS
-{
-template <typename Key>
-struct TypeHandler<std::set<Key>> : TypeHandlerSet<Key, std::set<Key>>
-{
-};
-} // namespace JS
-#endif
-
-#if defined(JS_STL_UNORDERED_SET) && !defined(JS_STL_UNORDERED_SET_INCLUDE)
-#define JS_STL_UNORDERED_SET_INCLUDE
-#include <unordered_set>
-namespace JS
-{
-template <typename Key>
-struct TypeHandler<std::unordered_set<Key>> : TypeHandlerSet<Key, std::unordered_set<Key>>
-{
-};
-} // namespace JS
-#endif
-
-#if defined(JS_STL_ARRAY) && !defined(JS_STL_ARRAY_INCLUDE)
-#define JS_STL_ARRAY_INCLUDE
-#include <array>
-namespace JS
-{
-template <typename T, size_t N>
-struct TypeHandler<std::array<T,N>>
-{
-public:
-  static inline Error to(std::array<T,N> &to_type, ParseContext &context)
-  {
-    if (context.token.value_type != Type::ArrayStart)
-      return JS::Error::ExpectedArrayStart;
-
-    context.nextToken();
-    for (size_t i = 0; i < N; i++)
-    {
-      if (context.error != JS::Error::NoError)
-        return context.error;
-      context.error = TypeHandler<T>::to(to_type[i], context);
-      if (context.error != JS::Error::NoError)
-        return context.error;
-
-      context.nextToken();
-    }
-
-    if (context.token.value_type != Type::ArrayEnd)
-      return JS::Error::ExpectedArrayEnd;
-    return context.error;
-  }
-  static void from(const std::array<T,N> &from, Token &token, Serializer &serializer)
-  {
-    token.value_type = Type::ArrayStart;
-    token.value = DataRef("[");
-    serializer.write(token);
-
-    token.name = DataRef("");
-    for (size_t i = 0; i < N; i++)
-      TypeHandler<T>::from(from[i], token, serializer);
-
-    token.name = DataRef("");
-    token.value_type = Type::ArrayEnd;
-    token.value = DataRef("]");
-    serializer.write(token);
-  }
-};
-} // namespace JS
-#endif
-
-#if defined(JS_INT_128) && !defined(JS_INT_128_INCLUDE)
-#define JS_INT_128_INCLUDE 1
-// Compiler support check
-#if defined(__SIZEOF_INT128__) && !defined(JS_NO_INT128_TYPEDEF)
-namespace JS
-{
-__extension__ using js_int128_t = __int128;
-__extension__ using js_uint128_t = unsigned __int128;
-} // namespace JS
-#endif
-
-namespace JS
-{
-/// \private
-template <>
-struct TypeHandler<js_int128_t> : TypeHandlerIntType<js_int128_t>
-{
-};
-
-/// \private
-template <>
-struct TypeHandler<js_uint128_t> : TypeHandlerIntType<js_uint128_t>
-{
-};
-} // namespace JS
-#endif
